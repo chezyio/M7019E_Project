@@ -3,6 +3,7 @@ package com.m7019e.nobi
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -18,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,19 +71,50 @@ fun BottomTabbedLayout() {
             color = MaterialTheme.colorScheme.background
         ) {
             // Replace Box with LazyVerticalGrid
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2), // 2 columns
-                modifier = Modifier.padding(8.dp)
-            ) {
-                items(20) { index -> // You can change the number of items as needed
-                    SimpleCard(
-                        title = "Title $index",
-                        subtitle = "Subtitle $index",
-                        imageResId = android.R.drawable.ic_menu_camera
-                    )
-                }
+
+            when (selectedTabIndex) {
+                0 -> HomeScreen()
+                1 -> FavoritesScreen()
+                2 -> SettingsScreen()
             }
+
         }
+    }
+}
+
+@Composable
+fun HomeScreen() {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.padding(16.dp)
+    ) {
+        items(6) { index -> // Display 6 items as an example
+            SimpleCard(
+                title = "Item $index",
+                subtitle = "Description $index",
+                imageResId = android.R.drawable.ic_menu_camera
+            )
+        }
+    }
+}
+
+@Composable
+fun FavoritesScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = "Favorites Screen", style = MaterialTheme.typography.headlineMedium)
+    }
+}
+
+@Composable
+fun SettingsScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = "Settings Screen", style = MaterialTheme.typography.headlineMedium)
     }
 }
 
@@ -96,13 +130,22 @@ fun SimpleCard(title: String, subtitle: String, imageResId: Int) {
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Adding Image
+            Image(
+                painter = painterResource(id = imageResId),
+                contentDescription = "Card Image",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp) // You can adjust the height as needed
+                    .padding(bottom = 8.dp),
+                contentScale = ContentScale.Crop // Adjusts the image to cover the area
+            )
             Spacer(modifier = Modifier.height(8.dp))
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             Text(text = subtitle, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
-
 @Preview(showBackground = true)
 @Composable
 fun BottomTabbedLayoutPreview() {
