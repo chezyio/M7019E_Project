@@ -72,12 +72,23 @@ fun BottomTabbedLayout(navController: NavController) {
     Scaffold(
         bottomBar = {
             NavigationBar(
-                modifier = Modifier.height(64.dp)
+                modifier = Modifier.height(80.dp) // Adjusted for Material 3 sizing
             ) {
-                tabItems.forEachIndexed { index, (title, _) ->
+                tabItems.forEachIndexed { index, (title, icon, _) ->
                     NavigationBarItem(
-                        icon = { Icon(tabItems[index].second, contentDescription = tabItems[index].first) },
-                        label = { Text(title) },
+                        icon = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = title,
+                                modifier = Modifier.size(24.dp) // Material 3 standard size
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.labelSmall // Material 3 label size
+                            )
+                        },
                         selected = selectedTabIndex == index,
                         onClick = { selectedTabIndex = index }
                     )
