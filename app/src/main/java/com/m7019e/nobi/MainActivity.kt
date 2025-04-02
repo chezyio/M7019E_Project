@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.m7019e.nobi.ui.theme.NobiTheme
 
+import com.m7019e.nobi.screens.FavoritesScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,41 +105,59 @@ fun BottomTabbedLayout(navController: NavController) {
             color = MaterialTheme.colorScheme.background
         ) {
             when (selectedTabIndex) {
-                0 -> HomeScreen(navController)
+                0 -> HomeScreen(navController)  // Home screen with TopAppBar
                 1 -> FavoritesScreen()
                 2 -> SettingsScreen()
             }
         }
     }
 }
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(navController: NavController) {
-    val items = List(6) { index ->
-        Triple("Item $index", "Description $index", android.R.drawable.ic_menu_camera)
-    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        CenterAlignedTopAppBar(
+            title = {
+                Text(
+                    text = "Home",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = { /* Handle navigation (e.g., open drawer) */ }) {
+                    Icon(
+                        imageVector = Icons.Default.Home,
+                        contentDescription = "Menu"
+                    )
+                }
+            },
+            actions = {
+                IconButton(onClick = { /* Handle settings action */ }) {
+                    Icon(
+                        imageVector = Icons.Filled.AccountCircle,
+                        contentDescription = "Settings"
+                    )
+                }
+            }
+        )
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = Modifier.padding(16.dp)
-    ) {
-        items(items) { (title, subtitle, imageResId) ->
-            SimpleCard(title, subtitle, imageResId) {
-                navController.navigate("detail/$title/$subtitle/$imageResId")
+        val items = List(6) { index ->
+            Triple("Item $index", "Description $index", android.R.drawable.ic_menu_camera)
+        }
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.padding(16.dp)
+        ) {
+            items(items) { (title, subtitle, imageResId) ->
+                SimpleCard(title, subtitle, imageResId) {
+                    navController.navigate("detail/$title/$subtitle/$imageResId")
+                }
             }
         }
     }
 }
 
-@Composable
-fun FavoritesScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = "Favorites Screen", style = MaterialTheme.typography.headlineMedium)
-    }
-}
 
 @Composable
 fun SettingsScreen() {
