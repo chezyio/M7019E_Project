@@ -78,13 +78,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.7.2")
-
-    // gemini
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    // firebase
     implementation("com.google.firebase:firebase-auth:22.2.0")
-    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-firestore:25.1.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

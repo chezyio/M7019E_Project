@@ -46,11 +46,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 import com.m7019e.nobi.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
 import com.m7019e.nobi.ui.theme.NobiTheme
@@ -450,6 +452,15 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
     return sections
 }
 
+data class Itinerary(
+    val destination: String,
+    val startDate: String,
+    val endDate: String,
+    val interests: List<String>,
+    val itineraryText: String,
+    val timestamp: Long
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen() {
@@ -460,6 +471,7 @@ fun FavoritesScreen() {
     var itinerary by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var showItineraryDialog by remember { mutableStateOf(false) }
+    var saveStatus by remember { mutableStateOf("") }
     val parsedItinerary by remember(itinerary) { mutableStateOf(parseItinerary(itinerary)) }
 
     val startDatePickerState = rememberDatePickerState(
@@ -477,10 +489,10 @@ fun FavoritesScreen() {
     val apiKey = BuildConfig.GEMINI_KEY
     val generativeModel = GenerativeModel(modelName = "gemini-1.5-flash-latest", apiKey = apiKey)
 
-    // Coroutine scope for launching API calls
     val coroutineScope = rememberCoroutineScope()
+    val db = Firebase.firestore
+    val auth = FirebaseAuth.getInstance()
 
-    // Function to generate itinerary
     fun generateItinerary() {
         if (destination.isNotBlank() && interests.isNotEmpty() && endDate >= startDate) {
             isLoading = true
@@ -504,6 +516,32 @@ fun FavoritesScreen() {
         } else {
             itinerary = "Please enter a destination, select interests, and ensure end date is not before start date."
             showItineraryDialog = true
+        }
+    }
+
+    fun saveItinerary() {
+        val userId = auth.currentUser?.uid ?: return
+        val itineraryData = Itinerary(
+            destination = destination,
+            startDate = startDate.format(dateFormatter),
+            endDate = endDate.format(dateFormatter),
+            interests = interests,
+            itineraryText = itinerary,
+            timestamp = System.currentTimeMillis()
+        )
+
+        coroutineScope.launch {
+            try {
+                db.collection("user")
+                    .document(userId)
+                    .collection("itinerary")
+                    .add(itineraryData)
+                    .await()
+                saveStatus = "Itinerary saved successfully!"
+            } catch (e: Exception) {
+                saveStatus = "Error saving itinerary: ${e.message}"
+                Log.e("FavoritesScreen", "Error saving itinerary: ${e.message}", e)
+            }
         }
     }
 
@@ -643,14 +681,22 @@ fun FavoritesScreen() {
                     )
                 }
 
+                if (saveStatus.isNotEmpty()) {
+                    Text(
+                        text = saveStatus,
+                        color = if (saveStatus.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
                 // Itinerary Popover Dialog
                 if (showItineraryDialog) {
                     AlertDialog(
                         onDismissRequest = { showItineraryDialog = false },
                         confirmButton = {
                             TextButton(
-                                onClick = { generateItinerary() } // Re-generate
-                            ) { Text("Re-generate") }
+                                onClick = { saveItinerary() }
+                            ) { Text("Save") }
                         },
                         dismissButton = {
                             TextButton(
@@ -890,6 +936,26 @@ fun OverlayScreen(navController: NavController) {
 fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
     val auth = FirebaseAuth.getInstance()
     val username = auth.currentUser?.email ?: "Guest"
+    val db = Firebase.firestore
+    var itineraries by remember { mutableStateOf<List<Itinerary>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        val userId = auth.currentUser?.uid ?: return@LaunchedEffect
+        try {
+            val snapshot = db.collection("user")
+                .document(userId)
+                .collection("itinerary")
+                .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .get()
+                .await()
+            itineraries = snapshot.toObjects(Itinerary::class.java)
+        } catch (e: Exception) {
+            errorMessage = "Error loading itineraries: ${e.message}"
+            Log.e("OverlayScreen", "Error loading itineraries: ${e.message}", e)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -913,13 +979,20 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             }
         )
 
-        // show logged in user
         Text(
-            text = username,
+            text = "Welcome, $username",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
+
+        if (errorMessage.isNotEmpty()) {
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
 
         LazyColumn(
             modifier = Modifier
@@ -928,34 +1001,43 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(20) { index ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { /* Handle item click if needed */ },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+            if (itineraries.isEmpty()) {
+                item {
+                    Text(
+                        text = "No saved itineraries",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
                     )
-                ) {
-                    Row(
+                }
+            } else {
+                items(itineraries) { itinerary ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "Item icon",
-                            modifier = Modifier.padding(end = 16.dp)
+                            .clickable { /* Handle itinerary click if needed */ },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
-                        Column {
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
                             Text(
-                                text = "Item $index",
-                                style = MaterialTheme.typography.bodyLarge
+                                text = itinerary.destination,
+                                style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "Description $index",
+                                text = "${itinerary.startDate} to ${itinerary.endDate}",
                                 style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "Interests: ${itinerary.interests.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = itinerary.itineraryText.take(100) + if (itinerary.itineraryText.length > 100) "..." else "",
+                                style = MaterialTheme.typography.bodyMedium
                             )
                         }
                     }
@@ -963,6 +1045,7 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             }
         }
 
+        // Logout Button
         Button(
             onClick = onLogout,
             modifier = Modifier
