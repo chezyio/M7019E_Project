@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -268,7 +269,7 @@ fun BottomTabbedLayout(navController: NavController) {
 @Composable
 fun HomeScreen(navController: NavController) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -298,22 +299,43 @@ fun HomeScreen(navController: NavController) {
             )
         }
 
-        item{
+        item {
             Column(
-                modifier = Modifier.padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(40.dp)
             ) {
                 Text(
                     text = "Nobi",
                     style = MaterialTheme.typography.headlineSmall
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { /* add action */ },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Explore")
+                    }
+                    Button(
+                        onClick = { navController.navigate("aiTripPlanner") },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Plan")
+                    }
+                }
             }
-
         }
 
         item {
             Column(
-                modifier = Modifier.padding(horizontal = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 mockDestinations.forEach { destination ->
@@ -472,14 +494,6 @@ fun FavoritesScreen(navController: NavController) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Button(
-                onClick = { navController.navigate("aiTripPlanner") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                Text("Plan with AI")
-            }
 
             if (errorMessage.isNotEmpty()) {
                 Text(
