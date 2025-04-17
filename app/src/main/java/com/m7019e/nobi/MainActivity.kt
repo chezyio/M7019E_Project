@@ -13,9 +13,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,16 +47,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
-import com.m7019e.nobi.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
 import com.m7019e.nobi.ui.theme.NobiTheme
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -98,6 +91,7 @@ fun MainNavigation(navController: NavHostController) {
             DetailScreen(title, subtitle, imageResId, navController)
         }
         composable("overlay") { OverlayScreen(navController) }
+        composable("aiTripPlanner") { AITripPlannerScreen(navController) }
     }
 }
 
@@ -108,7 +102,6 @@ fun LoginScreen(navController: NavController) {
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var showItineraryDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val auth = FirebaseAuth.getInstance()
 
@@ -258,7 +251,7 @@ fun BottomTabbedLayout(navController: NavController) {
                 0 -> HomeScreen(navController)
                 1 -> {
                     if (auth.currentUser != null) {
-                        FavoritesScreen()
+                        FavoritesScreen(navController)
                     } else {
                         LaunchedEffect(Unit) {
                             navController.navigate("login")
@@ -305,66 +298,31 @@ fun HomeScreen(navController: NavController) {
             )
         }
 
-        // Carousel section
-        item {
+        item{
             Column(
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+                modifier = Modifier.padding(horizontal = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Summary",
+                    text = "Nobi",
                     style = MaterialTheme.typography.headlineSmall
                 )
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    val carouselItems = List(5) { index ->
-                        Triple("Featured $index", "Highlight $index", android.R.drawable.ic_menu_gallery)
-                    }
-                    items(carouselItems) { (title, subtitle, imageResId) ->
-                        SimpleCarouselCard(title, subtitle, imageResId) {
-                            navController.navigate("detail/$title/$subtitle/$imageResId")
-                        }
-                    }
-                }
             }
+
         }
 
-        // Grid of 4 cards
         item {
             Column(
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.padding(horizontal = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Text(
-                    text = "Exercises",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-
-                val items = List(4) { index ->
-                    Triple("Item $index", "Description $index", android.R.drawable.ic_menu_camera)
-                }
-
-                items.chunked(2).forEach { rowItems ->
-                    Row(
+                mockDestinations.forEach { destination ->
+                    SimpleCard(
+                        destination = destination,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp), // Add vertical spacing between rows
-                        horizontalArrangement = Arrangement.spacedBy(16.dp) // Horizontal spacing between cards
-                    ) {
-                        rowItems.forEach { (title, subtitle, imageResId) ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                SimpleCard(
-                                    title = title,
-                                    subtitle = subtitle,
-                                    imageResId = imageResId,
-                                    onClick = { navController.navigate("detail/$title/$subtitle/$imageResId") }
-                                )
-                            }
-                        }
-                    }
+                            .fillMaxWidth(),
+                        onClick = { navController.navigate("detail/${destination.title}/${destination.subtitle}/${destination.imageResId}") }
+                    )
                 }
             }
         }
@@ -382,7 +340,7 @@ data class ParsedItinerary(
 )
 
 fun parseItinerary(itinerary: String): ParsedItinerary {
-    Log.d("FavoritesScreen", "Raw itinerary: '$itinerary'")
+    Log.d("AITripPlannerScreen", "Raw itinerary: '$itinerary'")
     val lines = itinerary.split("\n").filter { it.isNotBlank() }
     val introBuilder = StringBuilder()
     val dayPlans = mutableListOf<DayPlan>()
@@ -419,8 +377,8 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
     }
 
     val result = ParsedItinerary(introText, dayPlans)
-    Log.d("OverlayScreen", "Parsed intro: '$introText'")
-    Log.d("OverlayScreen", "Parsed plans: $dayPlans")
+    Log.d("AITripPlannerScreen", "Parsed intro: '$introText'")
+    Log.d("AITripPlannerScreen", "Parsed plans: $dayPlans")
     return result
 }
 
@@ -464,7 +422,129 @@ data class Itinerary(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FavoritesScreen() {
+fun FavoritesScreen(navController: NavController) {
+    val auth = FirebaseAuth.getInstance()
+    val db = Firebase.firestore
+    var itineraries by remember { mutableStateOf<List<Itinerary>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        val userId = auth.currentUser?.uid ?: return@LaunchedEffect
+        try {
+            val snapshot = db.collection("users")
+                .document(userId)
+                .collection("itineraries")
+                .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .get()
+                .await()
+
+            itineraries = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(Itinerary::class.java)?.also {
+                        Log.d("FavoritesScreen", "Deserialized itinerary: $it")
+                    }
+                } catch (e: Exception) {
+                    Log.e("FavoritesScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                    null
+                }
+            }
+            if (itineraries.isEmpty()) {
+                Log.d("FavoritesScreen", "No itineraries found for user $userId")
+            }
+        } catch (e: Exception) {
+            errorMessage = "Error loading itineraries: ${e.message}"
+            Log.e("FavoritesScreen", "Error fetching itineraries: ${e.message}", e)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Favorites") }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Button(
+                onClick = { navController.navigate("aiTripPlanner") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Text("Plan with AI")
+            }
+
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (itineraries.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No saved itineraries. Plan a trip with AI!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    items(itineraries) { itinerary ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { /* Handle itinerary click if needed */ },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = itinerary.destination,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "${itinerary.startDate} to ${itinerary.endDate}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = "Interests: ${itinerary.interests.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = itinerary.itineraryText.take(100) + if (itinerary.itineraryText.length > 100) "..." else "",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AITripPlannerScreen(navController: NavController) {
     var destination by remember { mutableStateOf("") }
     var startDate by remember { mutableStateOf(LocalDate.now()) }
     var endDate by remember { mutableStateOf(LocalDate.now().plusDays(5)) }
@@ -501,14 +581,14 @@ fun FavoritesScreen() {
                 try {
                     val days = endDate.toEpochDay() - startDate.toEpochDay() + 1
                     val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Format each day as 'Day X:' followed by the activities."
-                    Log.d("FavoritesScreen", "Generating with prompt: $prompt")
+                    Log.d("AITripPlannerScreen", "Generating with prompt: $prompt")
                     val response = generativeModel.generateContent(prompt)
                     itinerary = response.text ?: "No itinerary generated."
-                    Log.d("FavoritesScreen", "Response: $itinerary")
+                    Log.d("AITripPlannerScreen", "Response: $itinerary")
                     showItineraryDialog = true
                 } catch (e: Exception) {
                     itinerary = "Error generating itinerary: ${e.message}"
-                    Log.e("FavoritesScreen", "Error: ${e.message}", e)
+                    Log.e("AITripPlannerScreen", "Error: ${e.message}", e)
                     showItineraryDialog = true
                 } finally {
                     isLoading = false
@@ -533,15 +613,15 @@ fun FavoritesScreen() {
 
         coroutineScope.launch {
             try {
-                db.collection("user")
+                db.collection("users")
                     .document(userId)
-                    .collection("itinerary")
+                    .collection("itineraries")
                     .add(itineraryData)
                     .await()
                 saveStatus = "Itinerary saved successfully!"
             } catch (e: Exception) {
                 saveStatus = "Error saving itinerary: ${e.message}"
-                Log.e("FavoritesScreen", "Error saving itinerary: ${e.message}", e)
+                Log.e("AITripPlannerScreen", "Error saving itinerary: ${e.message}", e)
             }
         }
     }
@@ -550,7 +630,15 @@ fun FavoritesScreen() {
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
-                    title = { Text("AI Trip Planner") }
+                    title = { Text("AI Trip Planner") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Close"
+                            )
+                        }
+                    }
                 )
             }
         ) { padding ->
@@ -817,36 +905,6 @@ fun SimpleCarouselCard(title: String, subtitle: String, imageResId: Int, onClick
     }
 }
 
-@Composable
-fun SimpleCard(title: String, subtitle: String, imageResId: Int, onClick: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
-            Image(
-                painter = painterResource(id = imageResId),
-                contentDescription = "Card Image",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-                    .padding(bottom = 8.dp),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(text = subtitle, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController: NavController) {
@@ -945,14 +1003,13 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
     LaunchedEffect(Unit) {
         val userId = auth.currentUser?.uid ?: return@LaunchedEffect
         try {
-            val snapshot = db.collection("user")
+            val snapshot = db.collection("users")
                 .document(userId)
-                .collection("itinerary")
+                .collection("itineraries")
                 .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .get()
                 .await()
 
-            // map saved itineraries
             itineraries = snapshot.documents.mapNotNull { doc ->
                 try {
                     doc.toObject(Itinerary::class.java)?.also {
@@ -1081,3 +1138,49 @@ fun BottomTabbedLayoutPreview() {
         MainNavigation(navController)
     }
 }
+
+data class TravelDestination(
+    val title: String,
+    val subtitle: String,
+    val description: String,
+    val location: String,
+    val imageResId: Int
+)
+
+val mockDestinations = listOf(
+    TravelDestination(
+        title = "Paris",
+        subtitle = "City of Light",
+        description = "Explore the Eiffel Tower, Louvre Museum, and charming cafes along the Seine.",
+        location = "France",
+        imageResId = android.R.drawable.ic_menu_gallery
+    ),
+    TravelDestination(
+        title = "Tokyo",
+        subtitle = "Vibrant Metropolis",
+        description = "Experience Shibuya Crossing, ancient temples, and world-class sushi.",
+        location = "Japan",
+        imageResId = android.R.drawable.ic_menu_camera
+    ),
+    TravelDestination(
+        title = "New York",
+        subtitle = "The Big Apple",
+        description = "Visit Times Square, Central Park, and the Statue of Liberty.",
+        location = "USA",
+        imageResId = android.R.drawable.ic_menu_mapmode
+    ),
+    TravelDestination(
+        title = "Rome",
+        subtitle = "Eternal City",
+        description = "Discover the Colosseum, Roman Forum, and authentic Italian cuisine.",
+        location = "Italy",
+        imageResId = android.R.drawable.ic_menu_info_details
+    ),
+    TravelDestination(
+        title = "Cape Town",
+        subtitle = "Coastal Gem",
+        description = "Hike Table Mountain, visit Robben Island, and enjoy stunning beaches.",
+        location = "South Africa",
+        imageResId = android.R.drawable.ic_menu_compass
+    )
+)
