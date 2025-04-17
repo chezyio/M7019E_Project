@@ -108,6 +108,7 @@ fun LoginScreen(navController: NavController) {
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var showItineraryDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val auth = FirebaseAuth.getInstance()
 
@@ -418,8 +419,8 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
     }
 
     val result = ParsedItinerary(introText, dayPlans)
-    Log.d("FavoritesScreen", "Parsed intro: '$introText'")
-    Log.d("FavoritesScreen", "Parsed plans: $dayPlans")
+    Log.d("OverlayScreen", "Parsed intro: '$introText'")
+    Log.d("OverlayScreen", "Parsed plans: $dayPlans")
     return result
 }
 
@@ -453,12 +454,12 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
 }
 
 data class Itinerary(
-    val destination: String,
-    val startDate: String,
-    val endDate: String,
-    val interests: List<String>,
-    val itineraryText: String,
-    val timestamp: Long
+    val destination: String = "",
+    val startDate: String = "",
+    val endDate: String = "",
+    val interests: List<String> = emptyList(),
+    val itineraryText: String = "",
+    val timestamp: Long = 0L
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -950,10 +951,24 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
                 .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .get()
                 .await()
-            itineraries = snapshot.toObjects(Itinerary::class.java)
+
+            // map saved itineraries
+            itineraries = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(Itinerary::class.java)?.also {
+                        Log.d("OverlayScreen", "Deserialized itinerary: $it")
+                    }
+                } catch (e: Exception) {
+                    Log.e("OverlayScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                    null
+                }
+            }
+            if (itineraries.isEmpty()) {
+                Log.d("OverlayScreen", "No itineraries found for user $userId")
+            }
         } catch (e: Exception) {
             errorMessage = "Error loading itineraries: ${e.message}"
-            Log.e("OverlayScreen", "Error loading itineraries: ${e.message}", e)
+            Log.e("OverlayScreen", "Error fetching itineraries: ${e.message}", e)
         }
     }
 
@@ -979,6 +994,7 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             }
         )
 
+        // Username display
         Text(
             text = "Welcome, $username",
             style = MaterialTheme.typography.titleMedium,
