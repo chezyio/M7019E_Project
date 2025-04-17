@@ -888,6 +888,9 @@ fun OverlayScreen(navController: NavController) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
+    val auth = FirebaseAuth.getInstance()
+    val username = auth.currentUser?.email ?: "Guest"
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -910,11 +913,19 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             }
         )
 
+        // show logged in user
+        Text(
+            text = username,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(20) { index ->
