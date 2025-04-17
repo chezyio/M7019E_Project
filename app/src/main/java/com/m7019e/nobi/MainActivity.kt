@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -212,7 +211,6 @@ fun BottomTabbedLayout(navController: NavController) {
     val tabItems = listOf(
         Triple("Home", Icons.Default.Home, "Welcome to Home"),
         Triple("Favorites", Icons.Default.Favorite, "Your Favorite Items"),
-        Triple("Settings", Icons.Default.Settings, "Manage Settings")
     )
 
     Scaffold(
@@ -259,7 +257,6 @@ fun BottomTabbedLayout(navController: NavController) {
                         }
                     }
                 }
-                2 -> SettingsScreen()
             }
         }
     }
@@ -870,16 +867,6 @@ fun AITripPlannerScreen(navController: NavController) {
                 }
             }
         }
-    }
-}
-
-@Composable
-fun SettingsScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = "Settings Screen", style = MaterialTheme.typography.headlineMedium)
     }
 }
 
