@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "554203122656",
+    "project_id": "nobi-82165",
+    "storage_bucket": "nobi-82165.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:554203122656:android:b2ae05607a04d0ae8d3985",
+        "android_client_info": {
+          "package_name": "com.m7019e.nobi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAl3BAd0dw1D0LInYGGiCyK1z6V9WBbcBM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
