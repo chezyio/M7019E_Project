@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
@@ -33,18 +34,29 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.m7019e.nobi.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
+import com.google.firebase.auth.FirebaseAuth
 import com.m7019e.nobi.ui.theme.NobiTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
@@ -70,7 +82,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainNavigation(navController: NavHostController) {
-    NavHost(navController, startDestination = "home") {
+    val auth = FirebaseAuth.getInstance()
+    val currentUser by remember { mutableStateOf(auth.currentUser) }
+
+    NavHost(navController, startDestination = if (currentUser != null) "home" else "login") {
+        composable("login") { LoginScreen(navController) }
         composable("home") { BottomTabbedLayout(navController) }
         composable("detail/{title}/{subtitle}/{imageResId}") { backStackEntry ->
             val title = backStackEntry.arguments?.getString("title") ?: "No Title"
@@ -83,9 +99,118 @@ fun MainNavigation(navController: NavHostController) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LoginScreen(navController: NavController) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val auth = FirebaseAuth.getInstance()
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Login") }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            TextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next
+                )
+            )
+            TextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done
+                )
+            )
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Button(
+                onClick = {
+                    if (email.isNotBlank() && password.isNotBlank()) {
+                        isLoading = true
+                        coroutineScope.launch {
+                            try {
+                                auth.signInWithEmailAndPassword(email, password).await()
+                                navController.navigate("home") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = e.message ?: "Login failed"
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    } else {
+                        errorMessage = "Please enter email and password"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading
+            ) {
+                Text(if (isLoading) "Logging in..." else "Login")
+            }
+            Button(
+                onClick = {
+                    if (email.isNotBlank() && password.isNotBlank()) {
+                        isLoading = true
+                        coroutineScope.launch {
+                            try {
+                                auth.createUserWithEmailAndPassword(email, password).await()
+                                navController.navigate("home") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = e.message ?: "Registration failed"
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    } else {
+                        errorMessage = "Please enter email and password"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading
+            ) {
+                Text(if (isLoading) "Registering..." else "Register")
+            }
+        }
+    }
+}
+
 @Composable
 fun BottomTabbedLayout(navController: NavController) {
     var selectedTabIndex by remember { mutableStateOf(0) }
+    val auth = FirebaseAuth.getInstance()
 
     val tabItems = listOf(
         Triple("Home", Icons.Default.Home, "Welcome to Home"),
@@ -128,12 +253,21 @@ fun BottomTabbedLayout(navController: NavController) {
         ) {
             when (selectedTabIndex) {
                 0 -> HomeScreen(navController)
-                1 -> FavoritesScreen()
+                1 -> {
+                    if (auth.currentUser != null) {
+                        FavoritesScreen()
+                    } else {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("login")
+                        }
+                    }
+                }
                 2 -> SettingsScreen()
             }
         }
     }
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(navController: NavController) {
@@ -170,8 +304,9 @@ fun HomeScreen(navController: NavController) {
 
         // Carousel section
         item {
-            Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = "Summary",
@@ -194,11 +329,12 @@ fun HomeScreen(navController: NavController) {
             }
         }
 
+        // Grid of 4 cards
         item {
-            Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-
                 Text(
                     text = "Exercises",
                     style = MaterialTheme.typography.headlineSmall,
@@ -231,6 +367,7 @@ fun HomeScreen(navController: NavController) {
         }
     }
 }
+
 data class DayPlan(
     val day: String,
     val details: Map<String, String>
@@ -322,6 +459,7 @@ fun FavoritesScreen() {
     var interests by remember { mutableStateOf(listOf<String>()) }
     var itinerary by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var showItineraryDialog by remember { mutableStateOf(false) }
     val parsedItinerary by remember(itinerary) { mutableStateOf(parseItinerary(itinerary)) }
 
     val startDatePickerState = rememberDatePickerState(
@@ -339,12 +477,34 @@ fun FavoritesScreen() {
     val apiKey = BuildConfig.GEMINI_KEY
     val generativeModel = GenerativeModel(modelName = "gemini-1.5-flash-latest", apiKey = apiKey)
 
-    // Coroutine scope for launching API calls
     val coroutineScope = rememberCoroutineScope()
 
-    // Dynamic prompt based on user inputs
-    val days = endDate.toEpochDay() - startDate.toEpochDay() + 1
-    val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Format each day as 'Day X:' followed by the activities."
+    // generate itinerary
+    fun generateItinerary() {
+        if (destination.isNotBlank() && interests.isNotEmpty() && endDate >= startDate) {
+            isLoading = true
+            coroutineScope.launch {
+                try {
+                    val days = endDate.toEpochDay() - startDate.toEpochDay() + 1
+                    val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Format each day as 'Day X:' followed by the activities."
+                    Log.d("FavoritesScreen", "Generating with prompt: $prompt")
+                    val response = generativeModel.generateContent(prompt)
+                    itinerary = response.text ?: "No itinerary generated."
+                    Log.d("FavoritesScreen", "Response: $itinerary")
+                    showItineraryDialog = true
+                } catch (e: Exception) {
+                    itinerary = "Error generating itinerary: ${e.message}"
+                    Log.e("FavoritesScreen", "Error: ${e.message}", e)
+                    showItineraryDialog = true
+                } finally {
+                    isLoading = false
+                }
+            }
+        } else {
+            itinerary = "Please enter a destination, select interests, and ensure end date is not before start date."
+            showItineraryDialog = true
+        }
+    }
 
     MaterialTheme {
         Scaffold(
@@ -461,26 +621,7 @@ fun FavoritesScreen() {
                 }
 
                 Button(
-                    onClick = {
-                        if (destination.isNotBlank() && interests.isNotEmpty() && endDate >= startDate) {
-                            isLoading = true
-                            coroutineScope.launch {
-                                try {
-                                    Log.d("FavoritesScreen", "Generating with prompt: $prompt")
-                                    val response = generativeModel.generateContent(prompt)
-                                    itinerary = response.text ?: "No itinerary generated."
-                                    Log.d("FavoritesScreen", "Response: $itinerary")
-                                } catch (e: Exception) {
-                                    itinerary = "Error generating itinerary: ${e.message}"
-                                    Log.e("FavoritesScreen", "Error: ${e.message}", e)
-                                } finally {
-                                    isLoading = false
-                                }
-                            }
-                        } else {
-                            itinerary = "Please enter a destination, select interests, and ensure end date is not before start date."
-                        }
-                    },
+                    onClick = { generateItinerary() },
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
                         .fillMaxWidth(),
@@ -494,63 +635,94 @@ fun FavoritesScreen() {
                         text = "Loading itinerary...",
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
-                } else if (itinerary.isNotEmpty()) {
-                    // Display intro text separately
-                    if (parsedItinerary.intro.isNotEmpty()) {
-                        Text(
-                            text = parsedItinerary.intro,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-
-                    if (parsedItinerary.plans.isNotEmpty()) {
-                        parsedItinerary.plans.forEach { plan ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        text = plan.day,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    plan.details.forEach { (key, value) ->
-                                        Column {
-                                            Text(
-                                                text = key,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = value,
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = "Failed to parse itinerary: $itinerary",
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
                 } else {
                     Text(
                         text = "Enter details and generate an itinerary to see your trip plan.",
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
+
+                // Itinerary Popover Dialog
+                if (showItineraryDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showItineraryDialog = false },
+                        confirmButton = {
+                            TextButton(
+                                onClick = { generateItinerary() } // Re-generate
+                            ) { Text("Re-generate") }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = { showItineraryDialog = false }
+                            ) { Text("Close") }
+                        },
+                        text = {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .padding(16.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (parsedItinerary.intro.isNotEmpty()) {
+                                        Text(
+                                            text = parsedItinerary.intro,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                    if (parsedItinerary.plans.isNotEmpty()) {
+                                        parsedItinerary.plans.forEach { plan ->
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(16.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = plan.day,
+                                                        style = MaterialTheme.typography.titleMedium
+                                                    )
+                                                    plan.details.forEach { (key, value) ->
+                                                        Column {
+                                                            Text(
+                                                                text = key,
+                                                                style = MaterialTheme.typography.bodyLarge,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                            Text(
+                                                                text = value,
+                                                                style = MaterialTheme.typography.bodyMedium
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "Failed to parse itinerary: $itinerary",
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
             }
         }
     }
 }
+
 @Composable
 fun SettingsScreen() {
     Box(
