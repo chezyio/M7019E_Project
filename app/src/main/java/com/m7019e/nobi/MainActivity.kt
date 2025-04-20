@@ -57,6 +57,13 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import coil.compose.rememberAsyncImagePainter
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+fun String.encode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.toString())
+fun String.decode(): String = URLDecoder.decode(this, StandardCharsets.UTF_8.toString())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,12 +90,11 @@ fun MainNavigation(navController: NavHostController) {
     NavHost(navController, startDestination = if (currentUser != null) "home" else "login") {
         composable("login") { LoginScreen(navController) }
         composable("home") { BottomTabbedLayout(navController) }
-        composable("detail/{title}/{subtitle}/{imageResId}") { backStackEntry ->
+        composable("detail/{title}/{subtitle}/{imageUrl}") { backStackEntry ->
             val title = backStackEntry.arguments?.getString("title") ?: "No Title"
             val subtitle = backStackEntry.arguments?.getString("subtitle") ?: "No Subtitle"
-            val imageResId = backStackEntry.arguments?.getString("imageResId")?.toIntOrNull()
-                ?: android.R.drawable.ic_menu_camera
-            DetailScreen(title, subtitle, imageResId, navController)
+            val imageUrl = backStackEntry.arguments?.getString("imageUrl")?.decode() ?: ""
+            DetailScreen(title, subtitle, imageUrl, navController)
         }
         composable("overlay") { OverlayScreen(navController) }
         composable("aiTripPlanner") { AITripPlannerScreen(navController) }
@@ -310,7 +316,7 @@ fun HomeScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
-                        onClick = { /* add action */ },
+                        onClick = { /* TODO: Add action */ },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
@@ -340,7 +346,7 @@ fun HomeScreen(navController: NavController) {
                         destination = destination,
                         modifier = Modifier
                             .fillMaxWidth(),
-                        onClick = { navController.navigate("detail/${destination.title}/${destination.subtitle}/${destination.imageResId}") }
+                        onClick = { navController.navigate("detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}") }
                     )
                 }
             }
@@ -870,45 +876,9 @@ fun AITripPlannerScreen(navController: NavController) {
     }
 }
 
-@Composable
-fun SimpleCarouselCard(title: String, subtitle: String, imageResId: Int, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .width(160.dp)
-            .height(160.dp)
-            .clickable { onClick() },
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Image(
-                painter = painterResource(id = imageResId),
-                contentDescription = "Carousel Image",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .clip(MaterialTheme.shapes.medium),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController: NavController) {
+fun DetailScreen(title: String, subtitle: String, imageUrl: String, navController: NavController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -937,7 +907,10 @@ fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Image(
-                painter = painterResource(id = imageResId),
+                painter = rememberAsyncImagePainter(
+                    model = imageUrl,
+                    placeholder = painterResource(android.R.drawable.ic_menu_gallery)
+                ),
                 contentDescription = "Detail Image",
                 modifier = Modifier
                     .fillMaxWidth()
@@ -955,7 +928,6 @@ fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OverlayScreen(navController: NavController) {
     var isVisible by remember { mutableStateOf(true) }
@@ -1145,7 +1117,7 @@ data class TravelDestination(
     val subtitle: String,
     val description: String,
     val location: String,
-    val imageResId: Int
+    val imageUrl: String
 )
 
 val mockDestinations = listOf(
@@ -1154,34 +1126,34 @@ val mockDestinations = listOf(
         subtitle = "City of Light",
         description = "Explore the Eiffel Tower, Louvre Museum, and charming cafes along the Seine.",
         location = "France",
-        imageResId = android.R.drawable.ic_menu_gallery
+        imageUrl = "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&fm=jpg&w=1080&fit=max"
     ),
     TravelDestination(
         title = "Tokyo",
         subtitle = "Vibrant Metropolis",
         description = "Experience Shibuya Crossing, ancient temples, and world-class sushi.",
         location = "Japan",
-        imageResId = android.R.drawable.ic_menu_camera
+        imageUrl = "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&fm=jpg&w=1080&fit=max"
     ),
     TravelDestination(
         title = "New York",
         subtitle = "The Big Apple",
         description = "Visit Times Square, Central Park, and the Statue of Liberty.",
         location = "USA",
-        imageResId = android.R.drawable.ic_menu_mapmode
+        imageUrl = "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?q=80&fm=jpg&w=1080&fit=max"
     ),
     TravelDestination(
         title = "Rome",
         subtitle = "Eternal City",
         description = "Discover the Colosseum, Roman Forum, and authentic Italian cuisine.",
         location = "Italy",
-        imageResId = android.R.drawable.ic_menu_info_details
+        imageUrl = "https://images.unsplash.com/photo-1552832230-c0197dd311b5?q=80&fm=jpg&w=1080&fit=max"
     ),
     TravelDestination(
         title = "Cape Town",
         subtitle = "Coastal Gem",
         description = "Hike Table Mountain, visit Robben Island, and enjoy stunning beaches.",
         location = "South Africa",
-        imageResId = android.R.drawable.ic_menu_compass
+        imageUrl = "https://images.unsplash.com/photo-1580062513330-c3cd672d9d74?q=80&fm=jpg&w=1080&fit=max"
     )
 )
