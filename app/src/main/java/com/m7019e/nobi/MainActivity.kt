@@ -13,11 +13,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,7 +23,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,22 +43,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
-import com.m7019e.nobi.BuildConfig
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 import com.google.ai.client.generativeai.GenerativeModel
 import com.m7019e.nobi.ui.theme.NobiTheme
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import coil.compose.rememberAsyncImagePainter
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+fun String.encode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.toString())
+fun String.decode(): String = URLDecoder.decode(this, StandardCharsets.UTF_8.toString())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,14 +90,14 @@ fun MainNavigation(navController: NavHostController) {
     NavHost(navController, startDestination = if (currentUser != null) "home" else "login") {
         composable("login") { LoginScreen(navController) }
         composable("home") { BottomTabbedLayout(navController) }
-        composable("detail/{title}/{subtitle}/{imageResId}") { backStackEntry ->
+        composable("detail/{title}/{subtitle}/{imageUrl}") { backStackEntry ->
             val title = backStackEntry.arguments?.getString("title") ?: "No Title"
             val subtitle = backStackEntry.arguments?.getString("subtitle") ?: "No Subtitle"
-            val imageResId = backStackEntry.arguments?.getString("imageResId")?.toIntOrNull()
-                ?: android.R.drawable.ic_menu_camera
-            DetailScreen(title, subtitle, imageResId, navController)
+            val imageUrl = backStackEntry.arguments?.getString("imageUrl")?.decode() ?: ""
+            DetailScreen(title, subtitle, imageUrl, navController)
         }
         composable("overlay") { OverlayScreen(navController) }
+        composable("aiTripPlanner") { AITripPlannerScreen(navController) }
     }
 }
 
@@ -215,7 +217,6 @@ fun BottomTabbedLayout(navController: NavController) {
     val tabItems = listOf(
         Triple("Home", Icons.Default.Home, "Welcome to Home"),
         Triple("Favorites", Icons.Default.Favorite, "Your Favorite Items"),
-        Triple("Settings", Icons.Default.Settings, "Manage Settings")
     )
 
     Scaffold(
@@ -255,14 +256,13 @@ fun BottomTabbedLayout(navController: NavController) {
                 0 -> HomeScreen(navController)
                 1 -> {
                     if (auth.currentUser != null) {
-                        FavoritesScreen()
+                        FavoritesScreen(navController)
                     } else {
                         LaunchedEffect(Unit) {
                             navController.navigate("login")
                         }
                     }
                 }
-                2 -> SettingsScreen()
             }
         }
     }
@@ -272,7 +272,7 @@ fun BottomTabbedLayout(navController: NavController) {
 @Composable
 fun HomeScreen(navController: NavController) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -302,66 +302,52 @@ fun HomeScreen(navController: NavController) {
             )
         }
 
-        // Carousel section
         item {
             Column(
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(40.dp)
             ) {
                 Text(
-                    text = "Summary",
+                    text = "Nobi",
                     style = MaterialTheme.typography.headlineSmall
                 )
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val carouselItems = List(5) { index ->
-                        Triple("Featured $index", "Highlight $index", android.R.drawable.ic_menu_gallery)
+                    Button(
+                        onClick = { /* TODO: Add action */ },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Explore")
                     }
-                    items(carouselItems) { (title, subtitle, imageResId) ->
-                        SimpleCarouselCard(title, subtitle, imageResId) {
-                            navController.navigate("detail/$title/$subtitle/$imageResId")
-                        }
+                    Button(
+                        onClick = { navController.navigate("aiTripPlanner") },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Plan")
                     }
                 }
             }
         }
 
-        // Grid of 4 cards
         item {
             Column(
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Text(
-                    text = "Exercises",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-
-                val items = List(4) { index ->
-                    Triple("Item $index", "Description $index", android.R.drawable.ic_menu_camera)
-                }
-
-                items.chunked(2).forEach { rowItems ->
-                    Row(
+                mockDestinations.forEach { destination ->
+                    SimpleCard(
+                        destination = destination,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp), // Add vertical spacing between rows
-                        horizontalArrangement = Arrangement.spacedBy(16.dp) // Horizontal spacing between cards
-                    ) {
-                        rowItems.forEach { (title, subtitle, imageResId) ->
-                            Box(modifier = Modifier.weight(1f)) {
-                                SimpleCard(
-                                    title = title,
-                                    subtitle = subtitle,
-                                    imageResId = imageResId,
-                                    onClick = { navController.navigate("detail/$title/$subtitle/$imageResId") }
-                                )
-                            }
-                        }
-                    }
+                            .fillMaxWidth(),
+                        onClick = { navController.navigate("detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}") }
+                    )
                 }
             }
         }
@@ -379,7 +365,7 @@ data class ParsedItinerary(
 )
 
 fun parseItinerary(itinerary: String): ParsedItinerary {
-    Log.d("FavoritesScreen", "Raw itinerary: '$itinerary'")
+    Log.d("AITripPlannerScreen", "Raw itinerary: '$itinerary'")
     val lines = itinerary.split("\n").filter { it.isNotBlank() }
     val introBuilder = StringBuilder()
     val dayPlans = mutableListOf<DayPlan>()
@@ -416,8 +402,8 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
     }
 
     val result = ParsedItinerary(introText, dayPlans)
-    Log.d("FavoritesScreen", "Parsed intro: '$introText'")
-    Log.d("FavoritesScreen", "Parsed plans: $dayPlans")
+    Log.d("AITripPlannerScreen", "Parsed intro: '$introText'")
+    Log.d("AITripPlannerScreen", "Parsed plans: $dayPlans")
     return result
 }
 
@@ -450,9 +436,132 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
     return sections
 }
 
+data class Itinerary(
+    val destination: String = "",
+    val startDate: String = "",
+    val endDate: String = "",
+    val interests: List<String> = emptyList(),
+    val itineraryText: String = "",
+    val timestamp: Long = 0L
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FavoritesScreen() {
+fun FavoritesScreen(navController: NavController) {
+    val auth = FirebaseAuth.getInstance()
+    val db = Firebase.firestore
+    var itineraries by remember { mutableStateOf<List<Itinerary>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        val userId = auth.currentUser?.uid ?: return@LaunchedEffect
+        try {
+            val snapshot = db.collection("users")
+                .document(userId)
+                .collection("itineraries")
+                .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .get()
+                .await()
+
+            itineraries = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(Itinerary::class.java)?.also {
+                        Log.d("FavoritesScreen", "Deserialized itinerary: $it")
+                    }
+                } catch (e: Exception) {
+                    Log.e("FavoritesScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                    null
+                }
+            }
+            if (itineraries.isEmpty()) {
+                Log.d("FavoritesScreen", "No itineraries found for user $userId")
+            }
+        } catch (e: Exception) {
+            errorMessage = "Error loading itineraries: ${e.message}"
+            Log.e("FavoritesScreen", "Error fetching itineraries: ${e.message}", e)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Favorites") }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (itineraries.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No saved itineraries. Plan a trip with AI!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    items(itineraries) { itinerary ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { /* Handle itinerary click if needed */ },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = itinerary.destination,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "${itinerary.startDate} to ${itinerary.endDate}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = "Interests: ${itinerary.interests.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = itinerary.itineraryText.take(100) + if (itinerary.itineraryText.length > 100) "..." else "",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AITripPlannerScreen(navController: NavController) {
     var destination by remember { mutableStateOf("") }
     var startDate by remember { mutableStateOf(LocalDate.now()) }
     var endDate by remember { mutableStateOf(LocalDate.now().plusDays(5)) }
@@ -460,6 +569,7 @@ fun FavoritesScreen() {
     var itinerary by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var showItineraryDialog by remember { mutableStateOf(false) }
+    var saveStatus by remember { mutableStateOf("") }
     val parsedItinerary by remember(itinerary) { mutableStateOf(parseItinerary(itinerary)) }
 
     val startDatePickerState = rememberDatePickerState(
@@ -477,10 +587,10 @@ fun FavoritesScreen() {
     val apiKey = BuildConfig.GEMINI_KEY
     val generativeModel = GenerativeModel(modelName = "gemini-1.5-flash-latest", apiKey = apiKey)
 
-    // Coroutine scope for launching API calls
     val coroutineScope = rememberCoroutineScope()
+    val db = Firebase.firestore
+    val auth = FirebaseAuth.getInstance()
 
-    // Function to generate itinerary
     fun generateItinerary() {
         if (destination.isNotBlank() && interests.isNotEmpty() && endDate >= startDate) {
             isLoading = true
@@ -488,14 +598,14 @@ fun FavoritesScreen() {
                 try {
                     val days = endDate.toEpochDay() - startDate.toEpochDay() + 1
                     val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Format each day as 'Day X:' followed by the activities."
-                    Log.d("FavoritesScreen", "Generating with prompt: $prompt")
+                    Log.d("AITripPlannerScreen", "Generating with prompt: $prompt")
                     val response = generativeModel.generateContent(prompt)
                     itinerary = response.text ?: "No itinerary generated."
-                    Log.d("FavoritesScreen", "Response: $itinerary")
+                    Log.d("AITripPlannerScreen", "Response: $itinerary")
                     showItineraryDialog = true
                 } catch (e: Exception) {
                     itinerary = "Error generating itinerary: ${e.message}"
-                    Log.e("FavoritesScreen", "Error: ${e.message}", e)
+                    Log.e("AITripPlannerScreen", "Error: ${e.message}", e)
                     showItineraryDialog = true
                 } finally {
                     isLoading = false
@@ -507,11 +617,45 @@ fun FavoritesScreen() {
         }
     }
 
+    fun saveItinerary() {
+        val userId = auth.currentUser?.uid ?: return
+        val itineraryData = Itinerary(
+            destination = destination,
+            startDate = startDate.format(dateFormatter),
+            endDate = endDate.format(dateFormatter),
+            interests = interests,
+            itineraryText = itinerary,
+            timestamp = System.currentTimeMillis()
+        )
+
+        coroutineScope.launch {
+            try {
+                db.collection("users")
+                    .document(userId)
+                    .collection("itineraries")
+                    .add(itineraryData)
+                    .await()
+                saveStatus = "Itinerary saved successfully!"
+            } catch (e: Exception) {
+                saveStatus = "Error saving itinerary: ${e.message}"
+                Log.e("AITripPlannerScreen", "Error saving itinerary: ${e.message}", e)
+            }
+        }
+    }
+
     MaterialTheme {
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
-                    title = { Text("AI Trip Planner") }
+                    title = { Text("AI Trip Planner") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Close"
+                            )
+                        }
+                    }
                 )
             }
         ) { padding ->
@@ -643,14 +787,22 @@ fun FavoritesScreen() {
                     )
                 }
 
+                if (saveStatus.isNotEmpty()) {
+                    Text(
+                        text = saveStatus,
+                        color = if (saveStatus.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
                 // Itinerary Popover Dialog
                 if (showItineraryDialog) {
                     AlertDialog(
                         onDismissRequest = { showItineraryDialog = false },
                         confirmButton = {
                             TextButton(
-                                onClick = { generateItinerary() } // Re-generate
-                            ) { Text("Re-generate") }
+                                onClick = { saveItinerary() }
+                            ) { Text("Save") }
                         },
                         dismissButton = {
                             TextButton(
@@ -724,85 +876,9 @@ fun FavoritesScreen() {
     }
 }
 
-@Composable
-fun SettingsScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = "Settings Screen", style = MaterialTheme.typography.headlineMedium)
-    }
-}
-
-@Composable
-fun SimpleCarouselCard(title: String, subtitle: String, imageResId: Int, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .width(160.dp)
-            .height(160.dp)
-            .clickable { onClick() },
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Image(
-                painter = painterResource(id = imageResId),
-                contentDescription = "Carousel Image",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .clip(MaterialTheme.shapes.medium),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun SimpleCard(title: String, subtitle: String, imageResId: Int, onClick: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
-            Image(
-                painter = painterResource(id = imageResId),
-                contentDescription = "Card Image",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-                    .padding(bottom = 8.dp),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(text = subtitle, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController: NavController) {
+fun DetailScreen(title: String, subtitle: String, imageUrl: String, navController: NavController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -831,7 +907,10 @@ fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Image(
-                painter = painterResource(id = imageResId),
+                painter = rememberAsyncImagePainter(
+                    model = imageUrl,
+                    placeholder = painterResource(android.R.drawable.ic_menu_gallery)
+                ),
                 contentDescription = "Detail Image",
                 modifier = Modifier
                     .fillMaxWidth()
@@ -849,7 +928,6 @@ fun DetailScreen(title: String, subtitle: String, imageResId: Int, navController
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OverlayScreen(navController: NavController) {
     var isVisible by remember { mutableStateOf(true) }
@@ -890,6 +968,39 @@ fun OverlayScreen(navController: NavController) {
 fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
     val auth = FirebaseAuth.getInstance()
     val username = auth.currentUser?.email ?: "Guest"
+    val db = Firebase.firestore
+    var itineraries by remember { mutableStateOf<List<Itinerary>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        val userId = auth.currentUser?.uid ?: return@LaunchedEffect
+        try {
+            val snapshot = db.collection("users")
+                .document(userId)
+                .collection("itineraries")
+                .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .get()
+                .await()
+
+            itineraries = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(Itinerary::class.java)?.also {
+                        Log.d("OverlayScreen", "Deserialized itinerary: $it")
+                    }
+                } catch (e: Exception) {
+                    Log.e("OverlayScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                    null
+                }
+            }
+            if (itineraries.isEmpty()) {
+                Log.d("OverlayScreen", "No itineraries found for user $userId")
+            }
+        } catch (e: Exception) {
+            errorMessage = "Error loading itineraries: ${e.message}"
+            Log.e("OverlayScreen", "Error fetching itineraries: ${e.message}", e)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -913,13 +1024,21 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             }
         )
 
-        // show logged in user
+        // Username display
         Text(
-            text = username,
+            text = "Welcome, $username",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
+
+        if (errorMessage.isNotEmpty()) {
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
 
         LazyColumn(
             modifier = Modifier
@@ -928,34 +1047,43 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(20) { index ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { /* Handle item click if needed */ },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+            if (itineraries.isEmpty()) {
+                item {
+                    Text(
+                        text = "No saved itineraries",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
                     )
-                ) {
-                    Row(
+                }
+            } else {
+                items(itineraries) { itinerary ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "Item icon",
-                            modifier = Modifier.padding(end = 16.dp)
+                            .clickable { /* Handle itinerary click if needed */ },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
-                        Column {
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
                             Text(
-                                text = "Item $index",
-                                style = MaterialTheme.typography.bodyLarge
+                                text = itinerary.destination,
+                                style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "Description $index",
+                                text = "${itinerary.startDate} to ${itinerary.endDate}",
                                 style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "Interests: ${itinerary.interests.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = itinerary.itineraryText.take(100) + if (itinerary.itineraryText.length > 100) "..." else "",
+                                style = MaterialTheme.typography.bodyMedium
                             )
                         }
                     }
@@ -963,6 +1091,7 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             }
         }
 
+        // Logout Button
         Button(
             onClick = onLogout,
             modifier = Modifier
@@ -982,3 +1111,49 @@ fun BottomTabbedLayoutPreview() {
         MainNavigation(navController)
     }
 }
+
+data class TravelDestination(
+    val title: String,
+    val subtitle: String,
+    val description: String,
+    val location: String,
+    val imageUrl: String
+)
+
+val mockDestinations = listOf(
+    TravelDestination(
+        title = "Paris",
+        subtitle = "City of Light",
+        description = "Explore the Eiffel Tower, Louvre Museum, and charming cafes along the Seine.",
+        location = "France",
+        imageUrl = "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?q=80&fm=jpg&w=1080&fit=max"
+    ),
+    TravelDestination(
+        title = "Tokyo",
+        subtitle = "Vibrant Metropolis",
+        description = "Experience Shibuya Crossing, ancient temples, and world-class sushi.",
+        location = "Japan",
+        imageUrl = "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?q=80&fm=jpg&w=1080&fit=max"
+    ),
+    TravelDestination(
+        title = "New York",
+        subtitle = "The Big Apple",
+        description = "Visit Times Square, Central Park, and the Statue of Liberty.",
+        location = "USA",
+        imageUrl = "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?q=80&fm=jpg&w=1080&fit=max"
+    ),
+    TravelDestination(
+        title = "Rome",
+        subtitle = "Eternal City",
+        description = "Discover the Colosseum, Roman Forum, and authentic Italian cuisine.",
+        location = "Italy",
+        imageUrl = "https://images.unsplash.com/photo-1552832230-c0197dd311b5?q=80&fm=jpg&w=1080&fit=max"
+    ),
+    TravelDestination(
+        title = "Cape Town",
+        subtitle = "Coastal Gem",
+        description = "Hike Table Mountain, visit Robben Island, and enjoy stunning beaches.",
+        location = "South Africa",
+        imageUrl = "https://images.unsplash.com/photo-1580062513330-c3cd672d9d74?q=80&fm=jpg&w=1080&fit=max"
+    )
+)
