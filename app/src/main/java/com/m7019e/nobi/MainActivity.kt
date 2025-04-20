@@ -50,9 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.ImeAction
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.google.firebase.auth.FirebaseAuth
 import com.m7019e.nobi.BuildConfig
 import com.google.ai.client.generativeai.GenerativeModel
-import com.google.firebase.auth.FirebaseAuth
 import com.m7019e.nobi.ui.theme.NobiTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -477,9 +477,10 @@ fun FavoritesScreen() {
     val apiKey = BuildConfig.GEMINI_KEY
     val generativeModel = GenerativeModel(modelName = "gemini-1.5-flash-latest", apiKey = apiKey)
 
+    // Coroutine scope for launching API calls
     val coroutineScope = rememberCoroutineScope()
 
-    // generate itinerary
+    // Function to generate itinerary
     fun generateItinerary() {
         if (destination.isNotBlank() && interests.isNotEmpty() && endDate >= startDate) {
             isLoading = true
@@ -868,6 +869,16 @@ fun OverlayScreen(navController: NavController) {
                         kotlinx.coroutines.delay(300)
                         navController.popBackStack()
                     }
+                },
+                onLogout = {
+                    scope.launch {
+                        FirebaseAuth.getInstance().signOut()
+                        isVisible = false
+                        kotlinx.coroutines.delay(300)
+                        navController.navigate("login") {
+                            popUpTo("home") { inclusive = true }
+                        }
+                    }
                 }
             )
         }
@@ -876,7 +887,10 @@ fun OverlayScreen(navController: NavController) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DrawerContent(onClose: () -> Unit) {
+fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
+    val auth = FirebaseAuth.getInstance()
+    val username = auth.currentUser?.email ?: "Guest"
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -899,11 +913,19 @@ fun DrawerContent(onClose: () -> Unit) {
             }
         )
 
+        // show logged in user
+        Text(
+            text = username,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(20) { index ->
@@ -939,6 +961,15 @@ fun DrawerContent(onClose: () -> Unit) {
                     }
                 }
             }
+        }
+
+        Button(
+            onClick = onLogout,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text("Logout")
         }
     }
 }
