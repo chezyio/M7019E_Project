@@ -26,13 +26,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.m7019e.nobi.ui.theme.NobiTheme
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -322,53 +325,76 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
     }
     return sections
 }
+class ItinerariesViewModel : ViewModel() {
+    private val auth = FirebaseAuth.getInstance()
+    private val db = Firebase.firestore
 
-data class Itinerary(
-    val destination: String = "",
-    val startDate: String = "",
-    val endDate: String = "",
-    val interests: List<String> = emptyList(),
-    val itineraryText: String = "",
-    val timestamp: Long = 0L
-)
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ItinerariesScreen(navController: NavController) {
-    val auth = FirebaseAuth.getInstance()
-    val db = Firebase.firestore
-    var itineraries by remember { mutableStateOf<List<Itinerary>>(emptyList()) }
-    var errorMessage by remember { mutableStateOf("") }
-    val coroutineScope = rememberCoroutineScope()
+    var itineraries by mutableStateOf<List<ItineraryWithId>>(emptyList())
+        private set
+    var errorMessage by mutableStateOf("")
+        private set
 
-    LaunchedEffect(Unit) {
-        val userId = auth.currentUser?.uid ?: return@LaunchedEffect
-        try {
-            val snapshot = db.collection("users")
-                .document(userId)
-                .collection("itineraries")
-                .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                .get()
-                .await()
+    init {
+        fetchItineraries()
+    }
 
-            itineraries = snapshot.documents.mapNotNull { doc ->
-                try {
-                    doc.toObject(Itinerary::class.java)?.also {
-                        Log.d("ItinerariesScreen", "Deserialized itinerary: $it")
+    fun fetchItineraries() {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            try {
+                val snapshot = db.collection("users")
+                    .document(userId)
+                    .collection("itineraries")
+                    .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .get()
+                    .await()
+
+                itineraries = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(Itinerary::class.java)?.let {
+                            ItineraryWithId(doc.id, it).also {
+                                Log.d("ItinerariesViewModel", "Deserialized itinerary: $it")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ItinerariesViewModel", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                        null
                     }
-                } catch (e: Exception) {
-                    Log.e("ItinerariesScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
-                    null
                 }
+                if (itineraries.isEmpty()) {
+                    Log.d("ItinerariesViewModel", "No itineraries found for user $userId")
+                }
+            } catch (e: Exception) {
+                errorMessage = "Error loading itineraries: ${e.message}"
+                Log.e("ItinerariesViewModel", "Error fetching itineraries: ${e.message}", e)
             }
-            if (itineraries.isEmpty()) {
-                Log.d("ItinerariesScreen", "No itineraries found for user $userId")
-            }
-        } catch (e: Exception) {
-            errorMessage = "Error loading itineraries: ${e.message}"
-            Log.e("ItinerariesScreen", "Error fetching itineraries: ${e.message}", e)
         }
     }
 
+    fun deleteItinerary(itineraryId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            try {
+                db.collection("users")
+                    .document(userId)
+                    .collection("itineraries")
+                    .document(itineraryId)
+                    .delete()
+                    .await()
+                Log.d("ItinerariesViewModel", "Deleted itinerary $itineraryId")
+                // update cached list
+                itineraries = itineraries.filter { it.id != itineraryId }
+            } catch (e: Exception) {
+                errorMessage = "Error deleting itinerary: ${e.message}"
+                Log.e("ItinerariesViewModel", "Error deleting itinerary: ${e.message}", e)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ItinerariesScreen(navController: NavController, viewModel: ItinerariesViewModel = viewModel()) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -383,9 +409,9 @@ fun ItinerariesScreen(navController: NavController) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (errorMessage.isNotEmpty()) {
+            if (viewModel.errorMessage.isNotEmpty()) {
                 Text(
-                    text = errorMessage,
+                    text = viewModel.errorMessage,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
@@ -397,7 +423,7 @@ fun ItinerariesScreen(navController: NavController) {
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (itineraries.isEmpty()) {
+                if (viewModel.itineraries.isEmpty()) {
                     item {
                         Text(
                             text = "No saved itineraries. Plan a trip with AI!",
@@ -406,52 +432,30 @@ fun ItinerariesScreen(navController: NavController) {
                         )
                     }
                 } else {
-                    items(itineraries) { itinerary ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    navController.navigate(
-                                        "itineraryDetail/" +
-                                                "${itinerary.destination.encode()}/" +
-                                                "${itinerary.startDate.encode()}/" +
-                                                "${itinerary.endDate.encode()}/" +
-                                                "${itinerary.interests.joinToString(",").encode()}/" +
-                                                "${itinerary.itineraryText.encode()}"
-                                    )
-                                },
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
-                            ) {
-                                Text(
-                                    text = itinerary.destination,
-                                    style = MaterialTheme.typography.titleMedium
+                    items(viewModel.itineraries, key = { it.id }) { itineraryWithId ->
+                        ItineraryCard(
+                            itinerary = itineraryWithId.itinerary,
+                            onClick = {
+                                navController.navigate(
+                                    "itineraryDetail/" +
+                                            "${itineraryWithId.itinerary.destination.encode()}/" +
+                                            "${itineraryWithId.itinerary.startDate.encode()}/" +
+                                            "${itineraryWithId.itinerary.endDate.encode()}/" +
+                                            "${itineraryWithId.itinerary.interests.joinToString(",").encode()}/" +
+                                            "${itineraryWithId.itinerary.itineraryText.encode()}"
                                 )
-                                Text(
-                                    text = "${itinerary.startDate} to ${itinerary.endDate}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(
-                                    text = "Interests: ${itinerary.interests.joinToString(", ")}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = itinerary.itineraryText.take(100) + if (itinerary.itineraryText.length > 100) "..." else "",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                            },
+                            onDelete = {
+                                viewModel.deleteItinerary(itineraryWithId.id)
                             }
-                        }
+                        )
                     }
                 }
             }
         }
     }
 }
+
 
 
 
@@ -464,7 +468,19 @@ fun BottomTabbedLayoutPreview() {
     }
 }
 
+data class Itinerary(
+    val destination: String = "",
+    val startDate: String = "",
+    val endDate: String = "",
+    val interests: List<String> = emptyList(),
+    val itineraryText: String = "",
+    val timestamp: Long = 0L
+)
 
+data class ItineraryWithId(
+    val id: String,
+    val itinerary: Itinerary
+)
 data class Review(
     val author: String,
     val content: String,
