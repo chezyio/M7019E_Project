@@ -90,7 +90,7 @@ fun AITripPlannerScreen(navController: NavController) {
             coroutineScope.launch {
                 try {
                     val days = endDate.toEpochDay() - startDate.toEpochDay() + 1
-                    val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Format each day as 'Day X:' followed by the activities."
+                    val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Structure each day as ‘Day X: [Theme/Highlights]’ and divide the activities into sections: ‘Morning,’ ‘Afternoon,’ and ‘Evening.’ Group each activity/location with a title, description, and nothing else."
                     Log.d("AITripPlannerScreen", "Generating with prompt: $prompt")
                     val response = generativeModel.generateContent(prompt)
                     itinerary = response.text ?: "No itinerary generated."

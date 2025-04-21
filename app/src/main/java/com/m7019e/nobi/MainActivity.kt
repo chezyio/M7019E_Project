@@ -134,9 +134,26 @@ fun MainNavigation(navController: NavHostController) {
         }
         composable("overlay") { OverlayScreen(navController) }
         composable("aiTripPlanner") { AITripPlannerScreen(navController) }
+        composable(
+            "itineraryDetail/{destination}/{startDate}/{endDate}/{interests}/{itineraryText}"
+        ) { backStackEntry ->
+            val destination = backStackEntry.arguments?.getString("destination")?.decode() ?: ""
+            val startDate = backStackEntry.arguments?.getString("startDate")?.decode() ?: ""
+            val endDate = backStackEntry.arguments?.getString("endDate")?.decode() ?: ""
+            val interests = backStackEntry.arguments?.getString("interests")?.decode()
+                ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+            val itineraryText = backStackEntry.arguments?.getString("itineraryText")?.decode() ?: ""
+            ItineraryDetailScreen(
+                destination = destination,
+                startDate = startDate,
+                endDate = endDate,
+                interests = interests,
+                itineraryText = itineraryText,
+                navController = navController
+            )
+        }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -314,7 +331,6 @@ data class Itinerary(
     val itineraryText: String = "",
     val timestamp: Long = 0L
 )
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(navController: NavController) {
@@ -367,7 +383,6 @@ fun FavoritesScreen(navController: NavController) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
             if (errorMessage.isNotEmpty()) {
                 Text(
                     text = errorMessage,
@@ -395,7 +410,16 @@ fun FavoritesScreen(navController: NavController) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { /* Handle itinerary click if needed */ },
+                                .clickable {
+                                    navController.navigate(
+                                        "itineraryDetail/" +
+                                                "${itinerary.destination.encode()}/" +
+                                                "${itinerary.startDate.encode()}/" +
+                                                "${itinerary.endDate.encode()}/" +
+                                                "${itinerary.interests.joinToString(",").encode()}/" +
+                                                "${itinerary.itineraryText.encode()}"
+                                    )
+                                },
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant
                             )
@@ -440,3 +464,38 @@ fun BottomTabbedLayoutPreview() {
     }
 }
 
+
+data class Review(
+    val author: String,
+    val content: String,
+    val rating: Float
+)
+
+data class Activity(
+    val name: String,
+    val description: String
+)
+
+val mockReviews = listOf(
+    Review(
+        author = "Traveler123",
+        content = "Amazing experience visiting the landmarks! Highly recommend.",
+        rating = 4.5f
+    ),
+    Review(
+        author = "AdventureSeeker",
+        content = "The food and culture were fantastic, but some areas were crowded.",
+        rating = 4.0f
+    )
+)
+
+val mockActivities = listOf(
+    Activity(
+        name = "City Tour",
+        description = "A guided tour through the city's historic landmarks."
+    ),
+    Activity(
+        name = "Food Tasting",
+        description = "Sample local cuisine at top restaurants."
+    )
+)
