@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -38,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.google.ai.client.generativeai.GenerativeModel
@@ -50,11 +52,12 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AITripPlannerScreen(navController: NavController) {
+fun AITripPlannerScreen(navController: NavController, viewModel: ItinerariesViewModel = viewModel()) {
     var destination by remember { mutableStateOf("") }
     var startDate by remember { mutableStateOf(LocalDate.now()) }
     var endDate by remember { mutableStateOf(LocalDate.now().plusDays(5)) }
@@ -110,32 +113,6 @@ fun AITripPlannerScreen(navController: NavController) {
         }
     }
 
-    fun saveItinerary() {
-        val userId = auth.currentUser?.uid ?: return
-        val itineraryData = Itinerary(
-            destination = destination,
-            startDate = startDate.format(dateFormatter),
-            endDate = endDate.format(dateFormatter),
-            interests = interests,
-            itineraryText = itinerary,
-            timestamp = System.currentTimeMillis()
-        )
-
-        coroutineScope.launch {
-            try {
-                db.collection("users")
-                    .document(userId)
-                    .collection("itineraries")
-                    .add(itineraryData)
-                    .await()
-                saveStatus = "Itinerary saved successfully!"
-            } catch (e: Exception) {
-                saveStatus = "Error saving itinerary: ${e.message}"
-                Log.e("AITripPlannerScreen", "Error saving itinerary: ${e.message}", e)
-            }
-        }
-    }
-
     MaterialTheme {
         Scaffold(
             topBar = {
@@ -165,7 +142,8 @@ fun AITripPlannerScreen(navController: NavController) {
                     label = { Text("Destination") },
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
-                        .fillMaxWidth()
+                        .fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
                 )
 
                 TextField(
@@ -280,10 +258,10 @@ fun AITripPlannerScreen(navController: NavController) {
                     )
                 }
 
-                if (saveStatus.isNotEmpty()) {
+                if (viewModel.saveStatus.isNotEmpty()) {
                     Text(
-                        text = saveStatus,
-                        color = if (saveStatus.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        text = viewModel.saveStatus,
+                        color = if (viewModel.saveStatus.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -294,7 +272,16 @@ fun AITripPlannerScreen(navController: NavController) {
                         onDismissRequest = { showItineraryDialog = false },
                         confirmButton = {
                             TextButton(
-                                onClick = { saveItinerary() }
+                                onClick = {
+                                    viewModel.saveItinerary(
+                                        destination = destination,
+                                        startDate = startDate.format(dateFormatter),
+                                        endDate = endDate.format(dateFormatter),
+                                        interests = interests,
+                                        itineraryText = itinerary
+                                    )
+                                    showItineraryDialog = false
+                                }
                             ) { Text("Save") }
                         },
                         dismissButton = {

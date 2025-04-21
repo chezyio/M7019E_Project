@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.m7019e.nobi.ui.theme.NobiTheme
@@ -328,45 +329,80 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
 class ItinerariesViewModel : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val db = Firebase.firestore
+    private var listenerRegistration: ListenerRegistration? = null
 
     var itineraries by mutableStateOf<List<ItineraryWithId>>(emptyList())
         private set
     var errorMessage by mutableStateOf("")
         private set
+    var saveStatus by mutableStateOf("")
+        private set
 
     init {
-        fetchItineraries()
+        startListening()
     }
 
-    fun fetchItineraries() {
+    private fun startListening() {
         val userId = auth.currentUser?.uid ?: return
+        listenerRegistration = db.collection("users")
+            .document(userId)
+            .collection("itineraries")
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    errorMessage = "Error loading itineraries: ${error.message}"
+                    Log.e("ItinerariesViewModel", "Listener error: ${error.message}", error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    itineraries = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            doc.toObject(Itinerary::class.java)?.let {
+                                ItineraryWithId(doc.id, it).also {
+                                    Log.d("ItinerariesViewModel", "Deserialized itinerary: $it")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ItinerariesViewModel", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                            null
+                        }
+                    }
+                    errorMessage = "" // Clear error on successful update
+                    Log.d("ItinerariesViewModel", "Updated itineraries: ${itineraries.size} items")
+                }
+            }
+    }
+
+    fun saveItinerary(
+        destination: String,
+        startDate: String,
+        endDate: String,
+        interests: List<String>,
+        itineraryText: String
+    ) {
+        val userId = auth.currentUser?.uid ?: return
+        val itineraryData = Itinerary(
+            destination = destination,
+            startDate = startDate,
+            endDate = endDate,
+            interests = interests,
+            itineraryText = itineraryText,
+            timestamp = System.currentTimeMillis()
+        )
+
         viewModelScope.launch {
             try {
-                val snapshot = db.collection("users")
+                db.collection("users")
                     .document(userId)
                     .collection("itineraries")
-                    .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                    .get()
+                    .add(itineraryData)
                     .await()
-
-                itineraries = snapshot.documents.mapNotNull { doc ->
-                    try {
-                        doc.toObject(Itinerary::class.java)?.let {
-                            ItineraryWithId(doc.id, it).also {
-                                Log.d("ItinerariesViewModel", "Deserialized itinerary: $it")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ItinerariesViewModel", "Failed to deserialize document ${doc.id}: ${e.message}", e)
-                        null
-                    }
-                }
-                if (itineraries.isEmpty()) {
-                    Log.d("ItinerariesViewModel", "No itineraries found for user $userId")
-                }
+                saveStatus = "Itinerary saved successfully!"
+                Log.d("ItinerariesViewModel", "Saved itinerary: $itineraryData")
+                // listener will update itineraries
             } catch (e: Exception) {
-                errorMessage = "Error loading itineraries: ${e.message}"
-                Log.e("ItinerariesViewModel", "Error fetching itineraries: ${e.message}", e)
+                saveStatus = "Error saving itinerary: ${e.message}"
+                Log.e("ItinerariesViewModel", "Error saving itinerary: ${e.message}", e)
             }
         }
     }
@@ -382,13 +418,18 @@ class ItinerariesViewModel : ViewModel() {
                     .delete()
                     .await()
                 Log.d("ItinerariesViewModel", "Deleted itinerary $itineraryId")
-                // update cached list
-                itineraries = itineraries.filter { it.id != itineraryId }
+                // listener will update itineraries
             } catch (e: Exception) {
                 errorMessage = "Error deleting itinerary: ${e.message}"
                 Log.e("ItinerariesViewModel", "Error deleting itinerary: ${e.message}", e)
             }
         }
+    }
+
+    override fun onCleared() {
+        listenerRegistration?.remove()
+        Log.d("ItinerariesViewModel", "Listener removed")
+        super.onCleared()
     }
 }
 
