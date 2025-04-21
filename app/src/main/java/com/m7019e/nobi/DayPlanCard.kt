@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 fun DayPlanCard(plan: DayPlan) {
     Card(
         modifier = Modifier
-            .width(250.dp)
             .padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant

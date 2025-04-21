@@ -219,12 +219,17 @@ fun ItineraryDetailScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     } else {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(parsedItinerary.plans) { plan ->
-                                DayPlanCard(plan = plan)
+                            parsedItinerary.plans.forEach { plan ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    DayPlanCard(plan = plan)
+                                }
                             }
                         }
                     }

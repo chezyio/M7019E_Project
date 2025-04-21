@@ -42,7 +42,7 @@ fun ItineraryCard(
                     .fillMaxWidth()
             ) {
                 Text(
-                    text = itinerary.destination,
+                    text = itinerary.destination.replaceFirstChar { it.uppercase() },
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
