@@ -20,10 +20,7 @@ fun DestinationCard(
 ) {
     Card(
         modifier = modifier
-            .padding(16.dp)
-            .fillMaxWidth(0.8f)
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
             modifier = Modifier
