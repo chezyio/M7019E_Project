@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 @Composable
-fun OverlayScreen(navController: NavController) {
+fun ProfileActivity(navController: NavController) {
     var isVisible by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
 

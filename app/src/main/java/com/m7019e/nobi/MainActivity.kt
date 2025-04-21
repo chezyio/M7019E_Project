@@ -48,8 +48,8 @@ fun BottomTabbedLayout(navController: NavController) {
     val auth = FirebaseAuth.getInstance()
 
     val tabItems = listOf(
-        Triple("Home", Icons.Default.Home, "Welcome to Home"),
-        Triple("Favorites", Icons.Default.Favorite, "Your Favorite Items"),
+        Triple("Explore", Icons.Default.Home, "Welcome to Home"),
+        Triple("Itineraries", Icons.Default.Favorite, "Your Itineraries Items"),
     )
 
     Scaffold(
@@ -89,7 +89,7 @@ fun BottomTabbedLayout(navController: NavController) {
                 0 -> HomeScreen(navController)
                 1 -> {
                     if (auth.currentUser != null) {
-                        FavoritesScreen(navController)
+                        ItinerariesScreen(navController)
                     } else {
                         LaunchedEffect(Unit) {
                             navController.navigate("login")
@@ -132,7 +132,7 @@ fun MainNavigation(navController: NavHostController) {
             val imageUrl = backStackEntry.arguments?.getString("imageUrl")?.decode() ?: ""
             DetailScreen(title, subtitle, imageUrl, navController)
         }
-        composable("overlay") { OverlayScreen(navController) }
+        composable("profile") { ProfileActivity(navController) }
         composable("aiTripPlanner") { AITripPlannerScreen(navController) }
         composable(
             "itineraryDetail/{destination}/{startDate}/{endDate}/{interests}/{itineraryText}"
@@ -179,10 +179,10 @@ fun HomeScreen(navController: NavController) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { navController.navigate("overlay") }) {
+                    IconButton(onClick = { navController.navigate("profile") }) {
                         Icon(
                             imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = "Open Overlay"
+                            contentDescription = "Open Profile"
                         )
                     }
                 }
@@ -333,7 +333,7 @@ data class Itinerary(
 )
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FavoritesScreen(navController: NavController) {
+fun ItinerariesScreen(navController: NavController) {
     val auth = FirebaseAuth.getInstance()
     val db = Firebase.firestore
     var itineraries by remember { mutableStateOf<List<Itinerary>>(emptyList()) }
@@ -353,26 +353,26 @@ fun FavoritesScreen(navController: NavController) {
             itineraries = snapshot.documents.mapNotNull { doc ->
                 try {
                     doc.toObject(Itinerary::class.java)?.also {
-                        Log.d("FavoritesScreen", "Deserialized itinerary: $it")
+                        Log.d("ItinerariesScreen", "Deserialized itinerary: $it")
                     }
                 } catch (e: Exception) {
-                    Log.e("FavoritesScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
+                    Log.e("ItinerariesScreen", "Failed to deserialize document ${doc.id}: ${e.message}", e)
                     null
                 }
             }
             if (itineraries.isEmpty()) {
-                Log.d("FavoritesScreen", "No itineraries found for user $userId")
+                Log.d("ItinerariesScreen", "No itineraries found for user $userId")
             }
         } catch (e: Exception) {
             errorMessage = "Error loading itineraries: ${e.message}"
-            Log.e("FavoritesScreen", "Error fetching itineraries: ${e.message}", e)
+            Log.e("ItinerariesScreen", "Error fetching itineraries: ${e.message}", e)
         }
     }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Favorites") }
+                title = { Text("Itineraries") }
             )
         }
     ) { padding ->
