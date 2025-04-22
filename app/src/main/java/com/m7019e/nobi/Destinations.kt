@@ -36,12 +36,5 @@ val mockDestinations = listOf(
         description = "Discover the Colosseum, Roman Forum, and authentic Italian cuisine.",
         location = "Italy",
         imageUrl = "https://images.unsplash.com/photo-1552832230-c0197dd311b5?q=80&fm=jpg&w=1080&fit=max"
-    ),
-    Destination(
-        title = "Cape Town",
-        subtitle = "Coastal Gem",
-        description = "Hike Table Mountain, visit Robben Island, and enjoy stunning beaches.",
-        location = "South Africa",
-        imageUrl = "https://images.unsplash.com/photo-1580062513330-c3cd672d9d74?q=80&fm=jpg&w=1080&fit=max"
     )
 )
