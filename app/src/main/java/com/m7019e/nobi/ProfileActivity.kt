@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -124,21 +125,8 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        CenterAlignedTopAppBar(
-            title = {
-                Text(
-                    text = "Overlay Menu",
-                    style = MaterialTheme.typography.titleLarge
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = onClose) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Close"
-                    )
-                }
-            }
+        TopAppBar(
+            title = { Text("Profile") }
         )
 
         Text(

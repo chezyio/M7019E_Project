@@ -52,8 +52,9 @@ fun BottomTabbedLayout(navController: NavController) {
     val auth = FirebaseAuth.getInstance()
 
     val tabItems = listOf(
-        Triple("Explore", Icons.Default.Home, "Welcome to Home"),
-        Triple("Itineraries", Icons.Default.Favorite, "Your Itineraries Items"),
+        Triple("Explore", Icons.Default.Home, "Explore"),
+        Triple("Itineraries", Icons.Default.Favorite, "Itineraries"),
+        Triple("Profile", Icons.Filled.AccountCircle, "Profile"),
     )
 
     Scaffold(
@@ -100,6 +101,9 @@ fun BottomTabbedLayout(navController: NavController) {
                         }
                     }
                 }
+                2 -> {
+                    ProfileActivity(navController = navController)
+                }
             }
         }
     }
@@ -130,14 +134,15 @@ fun MainNavigation(navController: NavHostController) {
     NavHost(navController, startDestination = if (currentUser != null) "home" else "login") {
         composable("login") { LoginScreen(navController) }
         composable("home") { BottomTabbedLayout(navController) }
+        composable("profile") { BottomTabbedLayout(navController) }
         composable("detail/{title}/{subtitle}/{imageUrl}") { backStackEntry ->
             val title = backStackEntry.arguments?.getString("title") ?: "No Title"
             val subtitle = backStackEntry.arguments?.getString("subtitle") ?: "No Subtitle"
             val imageUrl = backStackEntry.arguments?.getString("imageUrl")?.decode() ?: ""
             DetailScreen(title, subtitle, imageUrl, navController)
         }
-        composable("profile") { ProfileActivity(navController) }
         composable("aiTripPlanner") { AITripPlannerScreen(navController) }
+
         composable(
             "itineraryDetail/{destination}/{startDate}/{endDate}/{interests}/{itineraryText}"
         ) { backStackEntry ->
@@ -162,83 +167,65 @@ fun MainNavigation(navController: NavHostController) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(navController: NavController) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = "",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = { /* Handle navigation (e.g., open drawer) */ }) {
-                        Icon(
-                            imageVector = Icons.Default.Home,
-                            contentDescription = "Menu"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { navController.navigate("profile") }) {
-                        Icon(
-                            imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = "Open Profile"
-                        )
-                    }
-                }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Nobi") }
             )
         }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
 
-        item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(40.dp)
-            ) {
-                Text(
-                    text = "Nobi",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(40.dp)
                 ) {
-                    Button(
-                        onClick = { /* TODO: Add action */ },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Explore")
-                    }
-                    Button(
-                        onClick = { navController.navigate("aiTripPlanner") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Plan")
+                        Button(
+                            onClick = { /* TODO: Add action */ },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Explore")
+                        }
+                        Button(
+                            onClick = { navController.navigate("aiTripPlanner") },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Plan")
+                        }
                     }
                 }
             }
-        }
 
-        item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                mockDestinations.forEach { destination ->
-                    DestinationCard(
-                        destination = destination,
-                        modifier = Modifier
-                            .fillMaxWidth(),
-                        onClick = { navController.navigate("detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}") }
-                    )
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    mockDestinations.forEach { destination ->
+                        DestinationCard(
+                            destination = destination,
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            onClick = { navController.navigate("detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}") }
+                        )
+                    }
                 }
             }
         }
@@ -433,69 +420,6 @@ class ItinerariesViewModel : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ItinerariesScreen(navController: NavController, viewModel: ItinerariesViewModel = viewModel()) {
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Itineraries") }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (viewModel.errorMessage.isNotEmpty()) {
-                Text(
-                    text = viewModel.errorMessage,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (viewModel.itineraries.isEmpty()) {
-                    item {
-                        Text(
-                            text = "No saved itineraries. Plan a trip with AI!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    }
-                } else {
-                    items(viewModel.itineraries, key = { it.id }) { itineraryWithId ->
-                        ItineraryCard(
-                            itinerary = itineraryWithId.itinerary,
-                            onClick = {
-                                navController.navigate(
-                                    "itineraryDetail/" +
-                                            "${itineraryWithId.itinerary.destination.encode()}/" +
-                                            "${itineraryWithId.itinerary.startDate.encode()}/" +
-                                            "${itineraryWithId.itinerary.endDate.encode()}/" +
-                                            "${itineraryWithId.itinerary.interests.joinToString(",").encode()}/" +
-                                            "${itineraryWithId.itinerary.itineraryText.encode()}"
-                                )
-                            },
-                            onDelete = {
-                                viewModel.deleteItinerary(itineraryWithId.id)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 
 

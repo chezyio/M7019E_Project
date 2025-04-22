@@ -220,12 +220,12 @@ fun ItineraryDetailScreen(
                         )
                     } else {
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             parsedItinerary.plans.forEach { plan ->
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     DayPlanCard(plan = plan)
