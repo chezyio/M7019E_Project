@@ -144,6 +144,13 @@ fun DrawerContent(onClose: () -> Unit, onLogout: () -> Unit) {
             )
         }
 
+        Text(
+            text = "Debug logs...",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()

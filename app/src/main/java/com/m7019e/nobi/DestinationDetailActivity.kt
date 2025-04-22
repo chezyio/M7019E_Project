@@ -55,8 +55,6 @@ fun DetailScreen(title: String, subtitle: String, imageUrl: String, navControlle
 
     // Mock data for interests, reviews, and activities
     val interests = listOf("History", "Food", "Art")
-    val reviews = mockReviews
-    val activities = mockActivities
 
     Scaffold(
         topBar = {
@@ -183,67 +181,8 @@ fun DetailScreen(title: String, subtitle: String, imageUrl: String, navControlle
                     )
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                        text = "Rating",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "4.5/5", // Mock rating
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                        text = "Reviews",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (reviews.isEmpty()) {
-                        Text(
-                            text = "No reviews available",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(reviews) { review ->
-                                {
-                                  /* do something */
-                                }                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                        text = "Activities",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (activities.isEmpty()) {
-                        Text(
-                            text = "No activities available",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(activities) { activity ->
-                                {
-                                    /* do something */
-                                }                              }
-                        }
-                    }
                 }
             }
         }

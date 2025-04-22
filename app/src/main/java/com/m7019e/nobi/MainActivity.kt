@@ -216,7 +216,7 @@ fun HomeScreen(navController: NavController) {
                 selectedTabIndex = pagerState.currentPage,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .padding(horizontal = 16.dp, vertical = 24.dp)
                     .height(50.dp)
                     .clip(RoundedCornerShape(50.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -285,7 +285,6 @@ fun ExploreTabContent(navController: NavController) {
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
@@ -378,82 +377,95 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        TextField(
+
+        if (isLoading) {
+            Text(
+                text = "Loading itinerary...",
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        } else {
+            Text(
+                text = "Enter a destination and select your interests",
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        OutlinedTextField(
             value = destination,
             onValueChange = { destination = it },
             label = { Text("Destination") },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
-
-        TextField(
-            value = startDate.format(dateFormatter),
-            onValueChange = { /* Read-only */ },
-            label = { Text("Start Date") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showStartDatePicker = true },
-            enabled = false
-        )
-        if (showStartDatePicker) {
-            DatePickerDialog(
-                onDismissRequest = { showStartDatePicker = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            startDatePickerState.selectedDateMillis?.let { millis ->
-                                startDate = Instant.ofEpochMilli(millis)
-                                    .atZone(ZoneId.systemDefault())
-                                    .toLocalDate()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp) // Add spacing between the fields
+        ) {
+            OutlinedTextField(
+                value = startDate.format(dateFormatter),
+                onValueChange = { /* Read-only */ },
+                label = { Text("Start Date") },
+                modifier = Modifier
+                    .weight(1f) // Distribute space evenly
+                    .clickable { showStartDatePicker = true },
+                enabled = false
+            )
+            if (showStartDatePicker) {
+                DatePickerDialog(
+                    onDismissRequest = { showStartDatePicker = false },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                startDatePickerState.selectedDateMillis?.let { millis ->
+                                    startDate = Instant.ofEpochMilli(millis)
+                                        .atZone(ZoneId.systemDefault())
+                                        .toLocalDate()
+                                }
+                                showStartDatePicker = false
                             }
-                            showStartDatePicker = false
-                        }
-                    ) { Text("Confirm") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
+                        ) { Text("Confirm") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
+                    }
+                ) {
+                    DatePicker(state = startDatePickerState)
                 }
-            ) {
-                DatePicker(state = startDatePickerState)
+            }
+
+            OutlinedTextField(
+                value = endDate.format(dateFormatter),
+                onValueChange = { /* Read-only */ },
+                label = { Text("End Date") },
+                modifier = Modifier
+                    .weight(1f) // Distribute space evenly
+                    .clickable { showEndDatePicker = true },
+                enabled = false
+            )
+            if (showEndDatePicker) {
+                DatePickerDialog(
+                    onDismissRequest = { showEndDatePicker = false },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                endDatePickerState.selectedDateMillis?.let { millis ->
+                                    endDate = Instant.ofEpochMilli(millis)
+                                        .atZone(ZoneId.systemDefault())
+                                        .toLocalDate()
+                                }
+                                showEndDatePicker = false
+                            }
+                        ) { Text("Confirm") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
+                    }
+                ) {
+                    DatePicker(state = endDatePickerState)
+                }
             }
         }
 
-        TextField(
-            value = endDate.format(dateFormatter),
-            onValueChange = { /* Read-only */ },
-            label = { Text("End Date") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showEndDatePicker = true },
-            enabled = false
-        )
-        if (showEndDatePicker) {
-            DatePickerDialog(
-                onDismissRequest = { showEndDatePicker = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            endDatePickerState.selectedDateMillis?.let { millis ->
-                                endDate = Instant.ofEpochMilli(millis)
-                                    .atZone(ZoneId.systemDefault())
-                                    .toLocalDate()
-                            }
-                            showEndDatePicker = false
-                        }
-                    ) { Text("Confirm") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
-                }
-            ) {
-                DatePicker(state = endDatePickerState)
-            }
-        }
-
-        Text(
-            text = "Interests:",
-            modifier = Modifier.padding(start = 8.dp)
-        )
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -481,17 +493,7 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
             Text(if (isLoading) "Generating..." else "Generate Itinerary")
         }
 
-        if (isLoading) {
-            Text(
-                text = "Loading itinerary...",
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        } else {
-            Text(
-                text = "Enter details and generate an itinerary to see your trip plan.",
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
+
 
         if (viewModel.saveStatus.isNotEmpty()) {
             Text(
