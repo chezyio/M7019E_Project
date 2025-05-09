@@ -1,5 +1,8 @@
 package com.m7019e.nobi
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -55,9 +58,10 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.compose.viewModel // Correct import for viewModel
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.work.Data
@@ -69,10 +73,11 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.m7019e.nobi.ui.theme.NobiTheme
-
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.io.File
+import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -80,6 +85,12 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 fun String.encode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.toString())
 fun String.decode(): String = URLDecoder.decode(this, StandardCharsets.UTF_8.toString())
@@ -151,8 +162,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Schedule image caching for mockDestinations
-        scheduleImageCaching()
+        // Load cached destinations or fetch from API
+        fetchOrLoadCountries()
 
         setContent {
             NobiTheme {
@@ -167,10 +178,95 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun fetchOrLoadCountries() {
+        val scope = CoroutineScope(Dispatchers.IO)
+        scope.launch {
+            if (isNetworkAvailable()) {
+                // Fetch from API if online
+                try {
+                    val url = URL("https://restcountries.com/v3.1/all?fields=name,capital,region,population,flags")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+
+                    val responseCode = connection.responseCode
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        val inputStream = connection.inputStream
+                        val jsonString = inputStream.bufferedReader().use { it.readText() }
+                        inputStream.close()
+
+                        val json = Json { ignoreUnknownKeys = true }
+                        val countries = json.decodeFromString<List<CountryResponse>>(jsonString)
+                            .take(20) // Limit to 20 countries
+                            .map { country ->
+                                Destination(
+                                    title = country.name.common,
+                                    subtitle = country.capital?.firstOrNull() ?: "Unknown Capital",
+                                    description = "Explore ${country.name.common}, a vibrant destination in ${country.region} with a population of ${country.population.toLocaleString()}.",
+                                    location = country.region,
+                                    imageUrl = country.flags.png,
+                                    cachePath = File(cacheDir, "${country.name.common.lowercase()}.png").absolutePath
+                                )
+                            }
+
+                        // Update global destinations list
+                        destinations = countries
+
+                        // Save to cache
+                        saveDestinationsToCache(countries)
+
+                        // Schedule image caching
+                        scheduleImageCaching()
+                    } else {
+                        Log.e("MainActivity", "Failed to fetch countries: HTTP $responseCode")
+                        loadDestinationsFromCache()
+                    }
+                    connection.disconnect()
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error fetching countries: ${e.message}", e)
+                    loadDestinationsFromCache()
+                }
+            } else {
+                // Load from cache if offline
+                loadDestinationsFromCache()
+            }
+        }
+    }
+
+    private fun saveDestinationsToCache(destinations: List<Destination>) {
+        try {
+            val cacheFile = File(cacheDir, "destinations.json")
+            val json = Json { prettyPrint = true }
+            val jsonString = json.encodeToString(destinations)
+            cacheFile.writeText(jsonString)
+            Log.d("MainActivity", "Saved destinations to cache: ${cacheFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error saving destinations to cache: ${e.message}", e)
+        }
+    }
+
+    private fun loadDestinationsFromCache() {
+        try {
+            val cacheFile = File(cacheDir, "destinations.json")
+            if (cacheFile.exists()) {
+                val jsonString = cacheFile.readText()
+                val json = Json { ignoreUnknownKeys = true }
+                destinations = json.decodeFromString(jsonString)
+                Log.d("MainActivity", "Loaded ${destinations.size} destinations from cache")
+            } else {
+                Log.d("MainActivity", "No cached destinations found")
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error loading destinations from cache: ${e.message}", e)
+            destinations = emptyList()
+        }
+    }
+
     private fun scheduleImageCaching() {
         val workManager = WorkManager.getInstance(this)
-        mockDestinations.forEach { destination ->
-            val cacheFile = File(cacheDir, "${destination.title.lowercase()}.jpg")
+        destinations.forEach { destination ->
+            val cacheFile = File(cacheDir, "${destination.title.lowercase()}.png")
             val inputData = Data.Builder()
                 .putString(ImageCacheWorker.KEY_IMAGE_URL, destination.imageUrl)
                 .putString(ImageCacheWorker.KEY_OUTPUT_PATH, cacheFile.absolutePath)
@@ -181,9 +277,40 @@ class MainActivity : ComponentActivity() {
                 .build()
 
             workManager.enqueue(cacheRequest)
+            Log.d("MainActivity", "Enqueued cache request for ${destination.title}")
         }
     }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
 }
+
+// Data class for parsing REST Countries API response
+@Serializable
+data class CountryResponse(
+    val name: Name,
+    val capital: List<String>?,
+    val region: String,
+    val population: Long,
+    val flags: Flags
+)
+
+@Serializable
+data class Name(
+    val common: String
+)
+
+@Serializable
+data class Flags(
+    val png: String
+)
+
+// Extension to format population
+fun Long.toLocaleString(): String = String.format("%,d", this)
 
 @Composable
 fun MainNavigation(navController: NavHostController) {
@@ -303,6 +430,8 @@ fun HomeScreen(navController: NavController) {
 @Composable
 fun ExploreTabContent(navController: NavController) {
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val isOffline = !context.isNetworkAvailable()
 
     LazyColumn(
         state = listState,
@@ -313,20 +442,42 @@ fun ExploreTabContent(navController: NavController) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
         }
-        item {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                mockDestinations.forEach { destination ->
-                    DestinationCard(
-                        destination = destination,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            navController.navigate(
-                                "detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}"
+        if (isOffline && destinations.isEmpty()) {
+            item {
+                Text(
+                    text = "No cached destinations available. Please connect to the internet to load countries.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        } else {
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (isOffline) {
+                        Text(
+                            text = "Showing cached destinations (offline mode)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+                    destinations.forEach { destination ->
+                        // Only show destinations with cached images in offline mode
+                        if (!isOffline || destination.cachePath?.let { File(it).exists() } == true) {
+                            DestinationCard(
+                                destination = destination,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    navController.navigate(
+                                        "detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}"
+                                    )
+                                }
                             )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -353,7 +504,7 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
         initialSelectedDateMillis = Instant.now().toEpochMilli()
     )
     val endDatePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = Instant.now().plusMillis(5 * 60 * 60 * 1000).toEpochMilli()
+        initialSelectedDateMillis = Instant.now().plusMillis(5 * 24 * 60 * 60 * 1000).toEpochMilli()
     )
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
@@ -422,14 +573,14 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp) // Add spacing between the fields
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedTextField(
                 value = startDate.format(dateFormatter),
                 onValueChange = { /* Read-only */ },
                 label = { Text("Start Date") },
                 modifier = Modifier
-                    .weight(1f) // Distribute space evenly
+                    .weight(1f)
                     .clickable { showStartDatePicker = true },
                 enabled = false
             )
@@ -461,7 +612,7 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
                 onValueChange = { /* Read-only */ },
                 label = { Text("End Date") },
                 modifier = Modifier
-                    .weight(1f) // Distribute space evenly
+                    .weight(1f)
                     .clickable { showEndDatePicker = true },
                 enabled = false
             )
@@ -640,7 +791,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
                 dayPlans.add(DayPlan(currentDay, detailsMap))
                 currentDetails.clear()
             }
-            currentDay = trimmedLine.replace("**", "") // Remove markdown bold
+            currentDay = trimmedLine.replace("**", "")
         } else if (currentDay.isNotEmpty()) {
             currentDetails.add(trimmedLine)
         } else {
@@ -652,7 +803,6 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
         dayPlans.add(DayPlan(currentDay, detailsMap))
     }
 
-    // If no days parsed, treat remaining text as "Day 1"
     val introText = introBuilder.toString().trim()
     if (dayPlans.isEmpty() && itinerary.isNotBlank()) {
         val detailsMap = parseDetails(itinerary.trim(), boldPattern)
@@ -668,7 +818,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
 fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
     val sections = mutableMapOf<String, String>()
     val lines = details.split("\n").filter { it.isNotBlank() }
-    var currentKey = "General" // Default key for non-bolded text
+    var currentKey = "General"
     val currentContent = StringBuilder()
 
     lines.forEach { line ->
@@ -678,7 +828,7 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
                 sections[currentKey] = currentContent.toString().trim()
                 currentContent.clear()
             }
-            currentKey = boldMatch.groupValues[1] // Extract text between **
+            currentKey = boldMatch.groupValues[1]
             val remainingText = line.substringAfter(boldMatch.value).trim()
             if (remainingText.isNotEmpty()) {
                 currentContent.append("$remainingText\n")
@@ -734,7 +884,7 @@ class ItinerariesViewModel : ViewModel() {
                             null
                         }
                     }
-                    errorMessage = "" // Clear error on successful update
+                    errorMessage = ""
                     Log.d("ItinerariesViewModel", "Updated itineraries: ${itineraries.size} items")
                 }
             }
@@ -855,3 +1005,12 @@ val mockActivities = listOf(
         description = "Sample local cuisine at top restaurants."
     )
 )
+
+// Extension function for network check in Compose
+@Composable
+fun Context.isNetworkAvailable(): Boolean {
+    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}

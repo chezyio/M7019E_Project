@@ -44,11 +44,11 @@ fun ItineraryDetailScreen(
     val opacity = (scrollState.value / threshold).coerceIn(0f, 1f)
 
     // find cover image from mockDestinations or use a placeholder
-    val destinationData = mockDestinations.find { it.title.equals(destination, ignoreCase = true) }
-    val coverImageSource = destinationData?.cachePath?.let { if (File(it).exists()) it else destinationData.imageUrl }
-        ?: destinationData?.imageUrl
+//    val destinationData = mockDestinations.find { it.title.equals(destination, ignoreCase = true) }
+//    val coverImageSource = destinationData?.cachePath?.let { if (File(it).exists()) it else destinationData.imageUrl }
+//        ?: destinationData?.imageUrl
         ?: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&fm=jpg&w=1080&fit=max"
-
+    val coverImageSource = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&fm=jpg&w=1080&fit=max"
     Scaffold(
         topBar = {
             TopAppBar(
@@ -63,7 +63,7 @@ fun ItineraryDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = opacity),
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = opacity as Float),
                     navigationIconContentColor = Color.White
                 ),
                 modifier = Modifier.zIndex(1f)
