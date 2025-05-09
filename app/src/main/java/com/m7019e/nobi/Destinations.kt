@@ -5,7 +5,8 @@ data class Destination(
     val subtitle: String,
     val description: String,
     val location: String,
-    val imageUrl: String
+    val imageUrl: String,
+    val cachePath: String? = null // store local cache path
 )
 
 val mockDestinations = listOf(

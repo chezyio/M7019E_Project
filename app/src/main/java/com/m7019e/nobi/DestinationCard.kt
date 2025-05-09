@@ -14,6 +14,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import java.io.File
 
 @Composable
 fun DestinationCard(
@@ -30,10 +31,12 @@ fun DestinationCard(
                 .fillMaxWidth()
                 .height(300.dp)
         ) {
-            // Image with a semi-dark overlay
+            // use cached image if available, otherwise fallback to remote URL
+            val imageSource = destination.cachePath?.let { if (File(it).exists()) it else destination.imageUrl }
+                ?: destination.imageUrl
             Image(
                 painter = rememberAsyncImagePainter(
-                    model = destination.imageUrl,
+                    model = imageSource,
                     placeholder = painterResource(android.R.drawable.ic_menu_gallery)
                 ),
                 contentDescription = "${destination.title} image",

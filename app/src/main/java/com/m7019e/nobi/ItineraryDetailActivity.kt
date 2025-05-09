@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -42,9 +43,10 @@ fun ItineraryDetailScreen(
     val threshold = with(density) { 400.dp.toPx() }
     val opacity = (scrollState.value / threshold).coerceIn(0f, 1f)
 
-    // Find cover image from mockDestinations or use a placeholder
+    // find cover image from mockDestinations or use a placeholder
     val destinationData = mockDestinations.find { it.title.equals(destination, ignoreCase = true) }
-    val coverImageUrl = destinationData?.imageUrl
+    val coverImageSource = destinationData?.cachePath?.let { if (File(it).exists()) it else destinationData.imageUrl }
+        ?: destinationData?.imageUrl
         ?: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&fm=jpg&w=1080&fit=max"
 
     Scaffold(
@@ -79,7 +81,7 @@ fun ItineraryDetailScreen(
                     .fillMaxSize()
                     .verticalScroll(scrollState)
             ) {
-                // cover Image
+                // Cover Image
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -87,7 +89,7 @@ fun ItineraryDetailScreen(
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(
-                            model = coverImageUrl,
+                            model = coverImageSource,
                             placeholder = painterResource(android.R.drawable.ic_menu_gallery)
                         ),
                         contentDescription = "$destination cover",
@@ -96,7 +98,7 @@ fun ItineraryDetailScreen(
                         contentScale = ContentScale.Crop
                     )
 
-                    // gradient overlay
+                    // Gradient overlay
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -121,8 +123,7 @@ fun ItineraryDetailScreen(
                         .padding(top = paddingValues.calculateTopPadding()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-
-                    // title
+                    // Title
                     Text(
                         text = destination.replaceFirstChar { it.uppercase() },
                         style = MaterialTheme.typography.headlineMedium,
@@ -131,7 +132,7 @@ fun ItineraryDetailScreen(
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    // interests
+                    // Interests
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -153,8 +154,6 @@ fun ItineraryDetailScreen(
                             }
                         }
                     }
-
-
 
                     Row(
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -193,8 +192,6 @@ fun ItineraryDetailScreen(
                         }
                     }
 
-
-
                     if (parsedItinerary.intro.isNotEmpty()) {
                         Text(
                             text = parsedItinerary.intro,
@@ -205,8 +202,7 @@ fun ItineraryDetailScreen(
                         )
                     }
 
-
-                    // daily Plans
+                    // Daily Plans
                     Text(
                         text = "Itinerary",
                         style = MaterialTheme.typography.titleLarge,

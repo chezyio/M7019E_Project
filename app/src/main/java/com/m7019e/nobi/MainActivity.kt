@@ -60,14 +60,19 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.m7019e.nobi.ui.theme.NobiTheme
+
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.io.File
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -145,6 +150,10 @@ fun BottomTabbedLayout(navController: NavController) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Schedule image caching for mockDestinations
+        scheduleImageCaching()
+
         setContent {
             NobiTheme {
                 Surface(
@@ -155,6 +164,23 @@ class MainActivity : ComponentActivity() {
                     MainNavigation(navController)
                 }
             }
+        }
+    }
+
+    private fun scheduleImageCaching() {
+        val workManager = WorkManager.getInstance(this)
+        mockDestinations.forEach { destination ->
+            val cacheFile = File(cacheDir, "${destination.title.lowercase()}.jpg")
+            val inputData = Data.Builder()
+                .putString(ImageCacheWorker.KEY_IMAGE_URL, destination.imageUrl)
+                .putString(ImageCacheWorker.KEY_OUTPUT_PATH, cacheFile.absolutePath)
+                .build()
+
+            val cacheRequest = OneTimeWorkRequestBuilder<ImageCacheWorker>()
+                .setInputData(inputData)
+                .build()
+
+            workManager.enqueue(cacheRequest)
         }
     }
 }
@@ -202,16 +228,14 @@ fun HomeScreen(navController: NavController) {
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val coroutineScope = rememberCoroutineScope()
 
-
     Scaffold(
-
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // view pager
+            // View pager
             TabRow(
                 selectedTabIndex = pagerState.currentPage,
                 modifier = Modifier
@@ -262,7 +286,7 @@ fun HomeScreen(navController: NavController) {
                 }
             }
 
-            // for tab content
+            // For tab content
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
@@ -329,7 +353,7 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
         initialSelectedDateMillis = Instant.now().toEpochMilli()
     )
     val endDatePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = Instant.now().plusMillis(5 * 24 * 60 * 60 * 1000).toEpochMilli()
+        initialSelectedDateMillis = Instant.now().plusMillis(5 * 60 * 60 * 1000).toEpochMilli()
     )
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
@@ -377,7 +401,6 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-
         if (isLoading) {
             Text(
                 text = "Loading itinerary...",
@@ -493,8 +516,6 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
             Text(if (isLoading) "Generating..." else "Generate Itinerary")
         }
 
-
-
         if (viewModel.saveStatus.isNotEmpty()) {
             Text(
                 text = viewModel.saveStatus,
@@ -503,7 +524,7 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
             )
         }
 
-        // itinerary Popover Dialog
+        // Itinerary Popover Dialog
         if (showItineraryDialog) {
             AlertDialog(
                 onDismissRequest = { showItineraryDialog = false },
@@ -608,7 +629,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
     val dayPlans = mutableListOf<DayPlan>()
     var currentDay = ""
     val currentDetails = mutableListOf<String>()
-    val boldPattern = Regex("\\*\\*(.+?)\\*\\*") // matches **text**
+    val boldPattern = Regex("\\*\\*(.+?)\\*\\*") // Matches **text**
     val dayPattern = Regex("^\\s*(?:\\*\\*)?Day\\s*\\d+[:\\s-].*?(?:\\*\\*)?$", RegexOption.IGNORE_CASE)
 
     lines.forEach { line ->
@@ -619,7 +640,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
                 dayPlans.add(DayPlan(currentDay, detailsMap))
                 currentDetails.clear()
             }
-            currentDay = trimmedLine.replace("**", "") // remove markdown bold
+            currentDay = trimmedLine.replace("**", "") // Remove markdown bold
         } else if (currentDay.isNotEmpty()) {
             currentDetails.add(trimmedLine)
         } else {
@@ -631,7 +652,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
         dayPlans.add(DayPlan(currentDay, detailsMap))
     }
 
-    // if no days parsed, treat remaining text as "Day 1"
+    // If no days parsed, treat remaining text as "Day 1"
     val introText = introBuilder.toString().trim()
     if (dayPlans.isEmpty() && itinerary.isNotBlank()) {
         val detailsMap = parseDetails(itinerary.trim(), boldPattern)
