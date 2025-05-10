@@ -1,10 +1,13 @@
 package com.m7019e.nobi
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
 @Serializable
+@Entity(tableName = "destinations")
 data class Destination(
-    val title: String,
+    @PrimaryKey val title: String,
     val subtitle: String,
     val description: String,
     val location: String,
@@ -12,5 +15,4 @@ data class Destination(
     val cachePath: String? = null
 )
 
-// Global list to hold destinations fetched from API
 var destinations: List<Destination> = emptyList()

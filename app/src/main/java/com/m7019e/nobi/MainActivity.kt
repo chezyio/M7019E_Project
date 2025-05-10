@@ -2,7 +2,9 @@ package com.m7019e.nobi
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -75,6 +77,7 @@ import com.google.firebase.ktx.Firebase
 import com.m7019e.nobi.ui.theme.NobiTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -102,6 +105,7 @@ fun BottomTabbedLayout(navController: NavController) {
 
     val tabItems = listOf(
         Triple("Explore", Icons.Default.Home, "Explore"),
+        Triple("Plan", Icons.Default.Home, "Plan"),
         Triple("Itineraries", Icons.Default.Favorite, "Itineraries"),
         Triple("Profile", Icons.Filled.AccountCircle, "Profile"),
     )
@@ -141,7 +145,8 @@ fun BottomTabbedLayout(navController: NavController) {
         ) {
             when (selectedTabIndex) {
                 0 -> HomeScreen(navController)
-                1 -> {
+                1 -> PlanScreen(navController)
+                2 -> {
                     if (auth.currentUser != null) {
                         ItinerariesScreen(navController)
                     } else {
@@ -150,20 +155,44 @@ fun BottomTabbedLayout(navController: NavController) {
                         }
                     }
                 }
-                2 -> {
-                    ProfileActivity(navController = navController)
-                }
+                3 -> ProfileActivity(navController = navController)
             }
         }
     }
 }
 
 class MainActivity : ComponentActivity() {
+    private lateinit var repository: DestinationRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Load cached destinations or fetch from API
-        fetchOrLoadCountries()
+        // Initialize Room database and repository
+        val database = AppDatabase.getDatabase(this)
+        repository = DestinationRepository(database, cacheDir, this)
+
+        // Setup network monitoring
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val lastFetchTimestamp = mutableStateOf(0L) // Track last successful fetch
+
+        // Register network callback
+        val networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                Log.d("MainActivity", "Network available, attempting to fetch new data")
+                repository.updateNetworkAvailability(true)
+                repository.fetchOrLoadDestinations(lastFetchTimestamp)
+            }
+
+            override fun onLost(network: Network) {
+                Log.d("MainActivity", "Network lost, switching to cached data")
+                repository.updateNetworkAvailability(false)
+            }
+        }
+
+        val networkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
 
         setContent {
             NobiTheme {
@@ -176,137 +205,34 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // Initial fetch or load
+        repository.fetchOrLoadDestinations(lastFetchTimestamp)
+
+        // Prepopulate database if empty
+        repository.prepopulateDatabase()
     }
 
-    private fun fetchOrLoadCountries() {
-        val scope = CoroutineScope(Dispatchers.IO)
-        scope.launch {
-            if (isNetworkAvailable()) {
-                // Fetch from API if online
-                try {
-                    val url = URL("https://restcountries.com/v3.1/all?fields=name,capital,region,population,flags")
-                    val connection = url.openConnection() as HttpURLConnection
-                    connection.requestMethod = "GET"
-                    connection.connectTimeout = 10000
-                    connection.readTimeout = 10000
-
-                    val responseCode = connection.responseCode
-                    if (responseCode == HttpURLConnection.HTTP_OK) {
-                        val inputStream = connection.inputStream
-                        val jsonString = inputStream.bufferedReader().use { it.readText() }
-                        inputStream.close()
-
-                        val json = Json { ignoreUnknownKeys = true }
-                        val countries = json.decodeFromString<List<CountryResponse>>(jsonString)
-                            .take(20) // Limit to 20 countries
-                            .map { country ->
-                                Destination(
-                                    title = country.name.common,
-                                    subtitle = country.capital?.firstOrNull() ?: "Unknown Capital",
-                                    description = "Explore ${country.name.common}, a vibrant destination in ${country.region} with a population of ${country.population.toLocaleString()}.",
-                                    location = country.region,
-                                    imageUrl = country.flags.png,
-                                    cachePath = File(cacheDir, "${country.name.common.lowercase()}.png").absolutePath
-                                )
-                            }
-
-                        // Update global destinations list
-                        destinations = countries
-
-                        // Save to cache
-                        saveDestinationsToCache(countries)
-
-                        // Schedule image caching
-                        scheduleImageCaching()
-                    } else {
-                        Log.e("MainActivity", "Failed to fetch countries: HTTP $responseCode")
-                        loadDestinationsFromCache()
-                    }
-                    connection.disconnect()
-                } catch (e: Exception) {
-                    Log.e("MainActivity", "Error fetching countries: ${e.message}", e)
-                    loadDestinationsFromCache()
-                }
-            } else {
-                // Load from cache if offline
-                loadDestinationsFromCache()
-            }
-        }
-    }
-
-    private fun saveDestinationsToCache(destinations: List<Destination>) {
-        try {
-            val cacheFile = File(cacheDir, "destinations.json")
-            val json = Json { prettyPrint = true }
-            val jsonString = json.encodeToString(destinations)
-            cacheFile.writeText(jsonString)
-            Log.d("MainActivity", "Saved destinations to cache: ${cacheFile.absolutePath}")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error saving destinations to cache: ${e.message}", e)
-        }
-    }
-
-    private fun loadDestinationsFromCache() {
-        try {
-            val cacheFile = File(cacheDir, "destinations.json")
-            if (cacheFile.exists()) {
-                val jsonString = cacheFile.readText()
-                val json = Json { ignoreUnknownKeys = true }
-                destinations = json.decodeFromString(jsonString)
-                Log.d("MainActivity", "Loaded ${destinations.size} destinations from cache")
-            } else {
-                Log.d("MainActivity", "No cached destinations found")
-            }
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error loading destinations from cache: ${e.message}", e)
-            destinations = emptyList()
-        }
-    }
-
-    private fun scheduleImageCaching() {
-        val workManager = WorkManager.getInstance(this)
-        destinations.forEach { destination ->
-            val cacheFile = File(cacheDir, "${destination.title.lowercase()}.png")
-            val inputData = Data.Builder()
-                .putString(ImageCacheWorker.KEY_IMAGE_URL, destination.imageUrl)
-                .putString(ImageCacheWorker.KEY_OUTPUT_PATH, cacheFile.absolutePath)
-                .build()
-
-            val cacheRequest = OneTimeWorkRequestBuilder<ImageCacheWorker>()
-                .setInputData(inputData)
-                .build()
-
-            workManager.enqueue(cacheRequest)
-            Log.d("MainActivity", "Enqueued cache request for ${destination.title}")
-        }
-    }
-
-    private fun isNetworkAvailable(): Boolean {
+    override fun onDestroy() {
+        super.onDestroy()
         val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        connectivityManager.unregisterNetworkCallback(object : ConnectivityManager.NetworkCallback() {})
+        Log.d("MainActivity", "Network callback unregistered")
     }
 }
 
-// Data class for parsing REST Countries API response
+// Data classes for reviews and activities
 @Serializable
-data class CountryResponse(
-    val name: Name,
-    val capital: List<String>?,
-    val region: String,
-    val population: Long,
-    val flags: Flags
+data class Review(
+    val author: String,
+    val content: String,
+    val rating: Float
 )
 
 @Serializable
-data class Name(
-    val common: String
-)
-
-@Serializable
-data class Flags(
-    val png: String
+data class Activity(
+    val name: String,
+    val description: String
 )
 
 // Extension to format population
@@ -348,104 +274,46 @@ fun MainNavigation(navController: NavHostController) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(navController: NavController) {
-    val tabs = listOf("Explore", "Plan")
-    val pagerState = rememberPagerState(pageCount = { tabs.size })
-    val coroutineScope = rememberCoroutineScope()
-
-    Scaffold(
-    ) { padding ->
-        Column(
+    Scaffold { padding ->
+        val repository = (LocalContext.current as ComponentActivity).let {
+            AppDatabase.getDatabase(it).let { db ->
+                DestinationRepository(db, it.cacheDir, it)
+            }
+        }
+        ExploreTabContent(
+            navController = navController,
+            repository = repository,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-        ) {
-            // View pager
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 24.dp)
-                    .height(50.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                indicator = {},
-                divider = {}
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    val isSelected = pagerState.currentPage == index
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(50.dp))
-                            .clickable {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            },
-                        shape = RoundedCornerShape(50.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                    shape = RoundedCornerShape(50.dp)
-                                )
-                        ) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // For tab content
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                when (page) {
-                    0 -> ExploreTabContent(navController)
-                    1 -> PlanTabContent(navController)
-                }
-            }
-        }
+        )
     }
 }
 
 @Composable
-fun ExploreTabContent(navController: NavController) {
+fun ExploreTabContent(navController: NavController, repository: DestinationRepository, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
-    val context = LocalContext.current
-    val isOffline = !context.isNetworkAvailable()
+    val destinations by repository.destinations.collectAsState()
+    val isOnline by repository.isNetworkAvailable.collectAsState()
+    val isFetching by repository.isFetching.collectAsState()
 
     LazyColumn(
         state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = modifier.padding(horizontal = 16.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
         }
-        if (isOffline && destinations.isEmpty()) {
+        if (destinations.isEmpty() && !isFetching) {
             item {
                 Text(
-                    text = "No cached destinations available. Please connect to the internet to load countries.",
+                    text = if (isOnline) {
+                        "No destinations available. Please try again later."
+                    } else {
+                        "No cached destinations available. Please connect to the internet to load countries."
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(16.dp)
@@ -456,7 +324,14 @@ fun ExploreTabContent(navController: NavController) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (isOffline) {
+                    if (isFetching) {
+                        Text(
+                            text = "Fetching new destinations...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    } else if (!isOnline) {
                         Text(
                             text = "Showing cached destinations (offline mode)",
                             style = MaterialTheme.typography.bodyMedium,
@@ -466,7 +341,7 @@ fun ExploreTabContent(navController: NavController) {
                     }
                     destinations.forEach { destination ->
                         // Only show destinations with cached images in offline mode
-                        if (!isOffline || destination.cachePath?.let { File(it).exists() } == true) {
+                        if (isOnline || destination.cachePath?.let { File(it).exists() } == true) {
                             DestinationCard(
                                 destination = destination,
                                 modifier = Modifier.fillMaxWidth(),
@@ -486,501 +361,6 @@ fun ExploreTabContent(navController: NavController) {
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel = viewModel()) {
-    var destination by remember { mutableStateOf("") }
-    var startDate by remember { mutableStateOf(LocalDate.now()) }
-    var endDate by remember { mutableStateOf(LocalDate.now().plusDays(5)) }
-    var interests by remember { mutableStateOf(listOf<String>()) }
-    var itinerary by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    var showItineraryDialog by remember { mutableStateOf(false) }
-    var saveStatus by remember { mutableStateOf("") }
-    val parsedItinerary by remember(itinerary) { mutableStateOf(parseItinerary(itinerary)) }
-
-    val startDatePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = Instant.now().toEpochMilli()
-    )
-    val endDatePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = Instant.now().plusMillis(5 * 24 * 60 * 60 * 1000).toEpochMilli()
-    )
-    var showStartDatePicker by remember { mutableStateOf(false) }
-    var showEndDatePicker by remember { mutableStateOf(false) }
-
-    val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-
-    val availableInterests = listOf("History", "Food", "Adventure", "Art", "Nature", "Shopping")
-    val apiKey = BuildConfig.GEMINI_KEY
-    val generativeModel = GenerativeModel(modelName = "gemini-1.5-flash-latest", apiKey = apiKey)
-
-    val coroutineScope = rememberCoroutineScope()
-    val db = Firebase.firestore
-    val auth = FirebaseAuth.getInstance()
-
-    fun generateItinerary() {
-        if (destination.isNotBlank() && interests.isNotEmpty() && endDate >= startDate) {
-            isLoading = true
-            coroutineScope.launch {
-                try {
-                    val days = endDate.toEpochDay() - startDate.toEpochDay() + 1
-                    val prompt = "Create a $days-day itinerary for $destination from $startDate to $endDate, focusing on ${interests.joinToString(", ")}. Structure each day as ‘Day X: [Theme/Highlights]’ and divide the activities into sections: ‘Morning,’ ‘Afternoon,’ and ‘Evening.’ Group each activity/location with a title, description, and nothing else."
-                    Log.d("PlanTabContent", "Generating with prompt: $prompt")
-                    val response = generativeModel.generateContent(prompt)
-                    itinerary = response.text ?: "No itinerary generated."
-                    Log.d("PlanTabContent", "Response: $itinerary")
-                    showItineraryDialog = true
-                } catch (e: Exception) {
-                    itinerary = "Error generating itinerary: ${e.message}"
-                    Log.e("PlanTabContent", "Error: ${e.message}", e)
-                    showItineraryDialog = true
-                } finally {
-                    isLoading = false
-                }
-            }
-        } else {
-            itinerary = "Please enter a destination, select interests, and ensure end date is not before start date."
-            showItineraryDialog = true
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        if (isLoading) {
-            Text(
-                text = "Loading itinerary...",
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        } else {
-            Text(
-                text = "Enter a destination and select your interests",
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-
-        OutlinedTextField(
-            value = destination,
-            onValueChange = { destination = it },
-            label = { Text("Destination") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = startDate.format(dateFormatter),
-                onValueChange = { /* Read-only */ },
-                label = { Text("Start Date") },
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { showStartDatePicker = true },
-                enabled = false
-            )
-            if (showStartDatePicker) {
-                DatePickerDialog(
-                    onDismissRequest = { showStartDatePicker = false },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                startDatePickerState.selectedDateMillis?.let { millis ->
-                                    startDate = Instant.ofEpochMilli(millis)
-                                        .atZone(ZoneId.systemDefault())
-                                        .toLocalDate()
-                                }
-                                showStartDatePicker = false
-                            }
-                        ) { Text("Confirm") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") }
-                    }
-                ) {
-                    DatePicker(state = startDatePickerState)
-                }
-            }
-
-            OutlinedTextField(
-                value = endDate.format(dateFormatter),
-                onValueChange = { /* Read-only */ },
-                label = { Text("End Date") },
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { showEndDatePicker = true },
-                enabled = false
-            )
-            if (showEndDatePicker) {
-                DatePickerDialog(
-                    onDismissRequest = { showEndDatePicker = false },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                endDatePickerState.selectedDateMillis?.let { millis ->
-                                    endDate = Instant.ofEpochMilli(millis)
-                                        .atZone(ZoneId.systemDefault())
-                                        .toLocalDate()
-                                }
-                                showEndDatePicker = false
-                            }
-                        ) { Text("Confirm") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") }
-                    }
-                ) {
-                    DatePicker(state = endDatePickerState)
-                }
-            }
-        }
-
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(availableInterests) { interest ->
-                val selected = interests.contains(interest)
-                FilterChip(
-                    selected = selected,
-                    onClick = {
-                        interests = if (selected) {
-                            interests - interest
-                        } else {
-                            interests + interest
-                        }
-                    },
-                    label = { Text(interest) }
-                )
-            }
-        }
-
-        Button(
-            onClick = { generateItinerary() },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading
-        ) {
-            Text(if (isLoading) "Generating..." else "Generate Itinerary")
-        }
-
-        if (viewModel.saveStatus.isNotEmpty()) {
-            Text(
-                text = viewModel.saveStatus,
-                color = if (viewModel.saveStatus.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-
-        // Itinerary Popover Dialog
-        if (showItineraryDialog) {
-            AlertDialog(
-                onDismissRequest = { showItineraryDialog = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.saveItinerary(
-                                destination = destination,
-                                startDate = startDate.format(dateFormatter),
-                                endDate = endDate.format(dateFormatter),
-                                interests = interests,
-                                itineraryText = itinerary
-                            )
-                            showItineraryDialog = false
-                        }
-                    ) { Text("Save") }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { showItineraryDialog = false }
-                    ) { Text("Close") }
-                },
-                text = {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (parsedItinerary.intro.isNotEmpty()) {
-                                Text(
-                                    text = parsedItinerary.intro,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                            if (parsedItinerary.plans.isNotEmpty()) {
-                                parsedItinerary.plans.forEach { plan ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                        )
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(16.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Text(
-                                                text = plan.day,
-                                                style = MaterialTheme.typography.titleMedium
-                                            )
-                                            plan.details.forEach { (key, value) ->
-                                                Column {
-                                                    Text(
-                                                        text = key,
-                                                        style = MaterialTheme.typography.bodyLarge,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                    Text(
-                                                        text = value,
-                                                        style = MaterialTheme.typography.bodyMedium
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    text = "Failed to parse itinerary: $itinerary",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
-                    }
-                }
-            )
-        }
-    }
-}
-
-data class DayPlan(
-    val day: String,
-    val details: Map<String, String>
-)
-
-data class ParsedItinerary(
-    val intro: String,
-    val plans: List<DayPlan>
-)
-
-fun parseItinerary(itinerary: String): ParsedItinerary {
-    Log.d("PlanTabContent", "Raw itinerary: '$itinerary'")
-    val lines = itinerary.split("\n").filter { it.isNotBlank() }
-    val introBuilder = StringBuilder()
-    val dayPlans = mutableListOf<DayPlan>()
-    var currentDay = ""
-    val currentDetails = mutableListOf<String>()
-    val boldPattern = Regex("\\*\\*(.+?)\\*\\*") // Matches **text**
-    val dayPattern = Regex("^\\s*(?:\\*\\*)?Day\\s*\\d+[:\\s-].*?(?:\\*\\*)?$", RegexOption.IGNORE_CASE)
-
-    lines.forEach { line ->
-        val trimmedLine = line.trim()
-        if (dayPattern.matches(trimmedLine)) {
-            if (currentDay.isNotEmpty() && currentDetails.isNotEmpty()) {
-                val detailsMap = parseDetails(currentDetails.joinToString("\n"), boldPattern)
-                dayPlans.add(DayPlan(currentDay, detailsMap))
-                currentDetails.clear()
-            }
-            currentDay = trimmedLine.replace("**", "")
-        } else if (currentDay.isNotEmpty()) {
-            currentDetails.add(trimmedLine)
-        } else {
-            introBuilder.append("$trimmedLine\n")
-        }
-    }
-    if (currentDay.isNotEmpty() && currentDetails.isNotEmpty()) {
-        val detailsMap = parseDetails(currentDetails.joinToString("\n"), boldPattern)
-        dayPlans.add(DayPlan(currentDay, detailsMap))
-    }
-
-    val introText = introBuilder.toString().trim()
-    if (dayPlans.isEmpty() && itinerary.isNotBlank()) {
-        val detailsMap = parseDetails(itinerary.trim(), boldPattern)
-        dayPlans.add(DayPlan("Day 1:", detailsMap))
-    }
-
-    val result = ParsedItinerary(introText, dayPlans)
-    Log.d("PlanTabContent", "Parsed intro: '$introText'")
-    Log.d("PlanTabContent", "Parsed plans: $dayPlans")
-    return result
-}
-
-fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
-    val sections = mutableMapOf<String, String>()
-    val lines = details.split("\n").filter { it.isNotBlank() }
-    var currentKey = "General"
-    val currentContent = StringBuilder()
-
-    lines.forEach { line ->
-        val boldMatch = boldPattern.find(line)
-        if (boldMatch != null) {
-            if (currentContent.isNotEmpty()) {
-                sections[currentKey] = currentContent.toString().trim()
-                currentContent.clear()
-            }
-            currentKey = boldMatch.groupValues[1]
-            val remainingText = line.substringAfter(boldMatch.value).trim()
-            if (remainingText.isNotEmpty()) {
-                currentContent.append("$remainingText\n")
-            }
-        } else {
-            currentContent.append("$line\n")
-        }
-    }
-    if (currentContent.isNotEmpty()) {
-        sections[currentKey] = currentContent.toString().trim()
-    }
-    return sections
-}
-
-class ItinerariesViewModel : ViewModel() {
-    private val auth = FirebaseAuth.getInstance()
-    private val db = Firebase.firestore
-    private var listenerRegistration: ListenerRegistration? = null
-
-    var itineraries by mutableStateOf<List<ItineraryWithId>>(emptyList())
-        private set
-    var errorMessage by mutableStateOf("")
-        private set
-    var saveStatus by mutableStateOf("")
-        private set
-
-    init {
-        startListening()
-    }
-
-    private fun startListening() {
-        val userId = auth.currentUser?.uid ?: return
-        listenerRegistration = db.collection("users")
-            .document(userId)
-            .collection("itineraries")
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    errorMessage = "Error loading itineraries: ${error.message}"
-                    Log.e("ItinerariesViewModel", "Listener error: ${error.message}", error)
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    itineraries = snapshot.documents.mapNotNull { doc ->
-                        try {
-                            doc.toObject(Itinerary::class.java)?.let {
-                                ItineraryWithId(doc.id, it).also {
-                                    Log.d("ItinerariesViewModel", "Deserialized itinerary: $it")
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e("ItinerariesViewModel", "Failed to deserialize document ${doc.id}: ${e.message}", e)
-                            null
-                        }
-                    }
-                    errorMessage = ""
-                    Log.d("ItinerariesViewModel", "Updated itineraries: ${itineraries.size} items")
-                }
-            }
-    }
-
-    fun saveItinerary(
-        destination: String,
-        startDate: String,
-        endDate: String,
-        interests: List<String>,
-        itineraryText: String
-    ) {
-        val userId = auth.currentUser?.uid ?: return
-        val itineraryData = Itinerary(
-            destination = destination,
-            startDate = startDate,
-            endDate = endDate,
-            interests = interests,
-            itineraryText = itineraryText,
-            timestamp = System.currentTimeMillis()
-        )
-
-        viewModelScope.launch {
-            try {
-                db.collection("users")
-                    .document(userId)
-                    .collection("itineraries")
-                    .add(itineraryData)
-                    .await()
-                saveStatus = "Itinerary saved successfully!"
-                Log.d("ItinerariesViewModel", "Saved itinerary: $itineraryData")
-            } catch (e: Exception) {
-                saveStatus = "Error saving itinerary: ${e.message}"
-                Log.e("ItinerariesViewModel", "Error saving itinerary: ${e.message}", e)
-            }
-        }
-    }
-
-    fun deleteItinerary(itineraryId: String) {
-        val userId = auth.currentUser?.uid ?: return
-        viewModelScope.launch {
-            try {
-                db.collection("users")
-                    .document(userId)
-                    .collection("itineraries")
-                    .document(itineraryId)
-                    .delete()
-                    .await()
-                Log.d("ItinerariesViewModel", "Deleted itinerary $itineraryId")
-            } catch (e: Exception) {
-                errorMessage = "Error deleting itinerary: ${e.message}"
-                Log.e("ItinerariesViewModel", "Error deleting itinerary: ${e.message}", e)
-            }
-        }
-    }
-
-    override fun onCleared() {
-        listenerRegistration?.remove()
-        Log.d("ItinerariesViewModel", "Listener removed")
-        super.onCleared()
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun BottomTabbedLayoutPreview() {
-    NobiTheme {
-        val navController = rememberNavController()
-        MainNavigation(navController)
-    }
-}
-
-data class Itinerary(
-    val destination: String = "",
-    val startDate: String = "",
-    val endDate: String = "",
-    val interests: List<String> = emptyList(),
-    val itineraryText: String = "",
-    val timestamp: Long = 0L
-)
-
-data class ItineraryWithId(
-    val id: String,
-    val itinerary: Itinerary
-)
-
-data class Review(
-    val author: String,
-    val content: String,
-    val rating: Float
-)
-
-data class Activity(
-    val name: String,
-    val description: String
-)
 
 val mockReviews = listOf(
     Review(
@@ -1013,4 +393,13 @@ fun Context.isNetworkAvailable(): Boolean {
     val network = connectivityManager.activeNetwork ?: return false
     val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+@Preview(showBackground = true)
+@Composable
+fun BottomTabbedLayoutPreview() {
+    NobiTheme {
+        val navController = rememberNavController()
+        MainNavigation(navController)
+    }
 }
