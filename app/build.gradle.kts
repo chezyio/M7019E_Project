@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
+    kotlin("plugin.serialization") version "2.1.20"
 }
 
 android {
@@ -85,6 +86,11 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore:25.1.3")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
+
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

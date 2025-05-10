@@ -175,14 +175,14 @@ fun DetailScreen(title: String, subtitle: String, imageUrl: String, navControlle
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = mockDestinations.find { it.title == title }?.location ?: "Unknown",
+                        text = when (val state = rememberDestinations()) {
+                            is DestinationsState.Success -> state.destinations.find { it.title == title }?.location ?: "Unknown"
+                            else -> "Unknown"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-
-
-
                 }
             }
         }

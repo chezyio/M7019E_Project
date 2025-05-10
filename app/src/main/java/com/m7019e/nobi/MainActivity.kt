@@ -51,7 +51,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -202,9 +201,7 @@ fun HomeScreen(navController: NavController) {
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val coroutineScope = rememberCoroutineScope()
 
-
     Scaffold(
-
     ) { padding ->
         Column(
             modifier = Modifier
@@ -279,6 +276,7 @@ fun HomeScreen(navController: NavController) {
 @Composable
 fun ExploreTabContent(navController: NavController) {
     val listState = rememberLazyListState()
+    val destinationsState = rememberDestinations()
 
     LazyColumn(
         state = listState,
@@ -293,16 +291,35 @@ fun ExploreTabContent(navController: NavController) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                mockDestinations.forEach { destination ->
-                    DestinationCard(
-                        destination = destination,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            navController.navigate(
-                                "detail/${destination.title}/${destination.subtitle}/${destination.imageUrl.encode()}"
+                when (destinationsState) {
+                    is DestinationsState.Loading -> {
+                        Text(
+                            text = "Loading destinations...",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                    is DestinationsState.Success -> {
+                        destinationsState.destinations.forEach { destination ->
+                            DestinationCard(
+                                destination = destination,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    navController.navigate(
+                                        "detail/${destination.title.encode()}/${destination.subtitle.encode()}/${destination.imageUrl.encode()}"
+                                    )
+                                }
                             )
                         }
-                    )
+                    }
+                    is DestinationsState.Error -> {
+                        Text(
+                            text = destinationsState.message,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -492,8 +509,6 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
         ) {
             Text(if (isLoading) "Generating..." else "Generate Itinerary")
         }
-
-
 
         if (viewModel.saveStatus.isNotEmpty()) {
             Text(

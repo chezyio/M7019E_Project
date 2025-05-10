@@ -43,9 +43,8 @@ fun ItineraryDetailScreen(
     val opacity = (scrollState.value / threshold).coerceIn(0f, 1f)
 
     // Find cover image from mockDestinations or use a placeholder
-    val destinationData = mockDestinations.find { it.title.equals(destination, ignoreCase = true) }
-    val coverImageUrl = destinationData?.imageUrl
-        ?: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&fm=jpg&w=1080&fit=max"
+//    val destinationData = mockDestinations.find { it.title.equals(destination, ignoreCase = true) }
+    val coverImageUrl = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&fm=jpg&w=1080&fit=max"
 
     Scaffold(
         topBar = {
