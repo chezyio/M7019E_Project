@@ -274,9 +274,9 @@ fun HomeScreen(navController: NavController) {
 }
 
 @Composable
-fun ExploreTabContent(navController: NavController) {
+fun ExploreTabContent(navController: NavController, viewModel: DestinationsViewModel = viewModel()) {
     val listState = rememberLazyListState()
-    val destinationsState = rememberDestinations()
+    val destinationsState = rememberDestinations(viewModel)
 
     LazyColumn(
         state = listState,
@@ -313,12 +313,23 @@ fun ExploreTabContent(navController: NavController) {
                         }
                     }
                     is DestinationsState.Error -> {
-                        Text(
-                            text = destinationsState.message,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(16.dp)
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = destinationsState.message,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                            Button(
+                                onClick = { viewModel.fetchDestinations() },
+                                modifier = Modifier.padding(8.dp)
+                            ) {
+                                Text("Retry")
+                            }
+                        }
                     }
                 }
             }
@@ -416,14 +427,14 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp) // Add spacing between the fields
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedTextField(
                 value = startDate.format(dateFormatter),
                 onValueChange = { /* Read-only */ },
                 label = { Text("Start Date") },
                 modifier = Modifier
-                    .weight(1f) // Distribute space evenly
+                    .weight(1f)
                     .clickable { showStartDatePicker = true },
                 enabled = false
             )
@@ -455,7 +466,7 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
                 onValueChange = { /* Read-only */ },
                 label = { Text("End Date") },
                 modifier = Modifier
-                    .weight(1f) // Distribute space evenly
+                    .weight(1f)
                     .clickable { showEndDatePicker = true },
                 enabled = false
             )
@@ -518,7 +529,6 @@ fun PlanTabContent(navController: NavController, viewModel: ItinerariesViewModel
             )
         }
 
-        // itinerary Popover Dialog
         if (showItineraryDialog) {
             AlertDialog(
                 onDismissRequest = { showItineraryDialog = false },
@@ -623,7 +633,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
     val dayPlans = mutableListOf<DayPlan>()
     var currentDay = ""
     val currentDetails = mutableListOf<String>()
-    val boldPattern = Regex("\\*\\*(.+?)\\*\\*") // matches **text**
+    val boldPattern = Regex("\\*\\*(.+?)\\*\\*")
     val dayPattern = Regex("^\\s*(?:\\*\\*)?Day\\s*\\d+[:\\s-].*?(?:\\*\\*)?$", RegexOption.IGNORE_CASE)
 
     lines.forEach { line ->
@@ -634,7 +644,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
                 dayPlans.add(DayPlan(currentDay, detailsMap))
                 currentDetails.clear()
             }
-            currentDay = trimmedLine.replace("**", "") // remove markdown bold
+            currentDay = trimmedLine.replace("**", "")
         } else if (currentDay.isNotEmpty()) {
             currentDetails.add(trimmedLine)
         } else {
@@ -646,7 +656,6 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
         dayPlans.add(DayPlan(currentDay, detailsMap))
     }
 
-    // if no days parsed, treat remaining text as "Day 1"
     val introText = introBuilder.toString().trim()
     if (dayPlans.isEmpty() && itinerary.isNotBlank()) {
         val detailsMap = parseDetails(itinerary.trim(), boldPattern)
@@ -662,7 +671,7 @@ fun parseItinerary(itinerary: String): ParsedItinerary {
 fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
     val sections = mutableMapOf<String, String>()
     val lines = details.split("\n").filter { it.isNotBlank() }
-    var currentKey = "General" // Default key for non-bolded text
+    var currentKey = "General"
     val currentContent = StringBuilder()
 
     lines.forEach { line ->
@@ -672,7 +681,7 @@ fun parseDetails(details: String, boldPattern: Regex): Map<String, String> {
                 sections[currentKey] = currentContent.toString().trim()
                 currentContent.clear()
             }
-            currentKey = boldMatch.groupValues[1] // Extract text between **
+            currentKey = boldMatch.groupValues[1]
             val remainingText = line.substringAfter(boldMatch.value).trim()
             if (remainingText.isNotEmpty()) {
                 currentContent.append("$remainingText\n")
@@ -728,7 +737,7 @@ class ItinerariesViewModel : ViewModel() {
                             null
                         }
                     }
-                    errorMessage = "" // Clear error on successful update
+                    errorMessage = ""
                     Log.d("ItinerariesViewModel", "Updated itineraries: ${itineraries.size} items")
                 }
             }

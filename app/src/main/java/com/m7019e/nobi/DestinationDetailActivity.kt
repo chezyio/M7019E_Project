@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,19 +43,26 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun DetailScreen(title: String, subtitle: String, imageUrl: String, navController: NavController) {
+fun DetailScreen(
+    title: String,
+    subtitle: String,
+    imageUrl: String,
+    navController: NavController,
+    viewModel: DestinationsViewModel = viewModel()
+) {
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val threshold = with(density) { 400.dp.toPx() }
     val opacity = (scrollState.value / threshold).coerceIn(0f, 1f)
 
-    // Mock data for interests, reviews, and activities
     val interests = listOf("History", "Food", "Art")
+    val destinationsState = viewModel.destinationsState.collectAsState().value
 
     Scaffold(
         topBar = {
@@ -88,7 +96,6 @@ fun DetailScreen(title: String, subtitle: String, imageUrl: String, navControlle
                     .fillMaxSize()
                     .verticalScroll(scrollState)
             ) {
-                // Cover Image
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -105,7 +112,6 @@ fun DetailScreen(title: String, subtitle: String, imageUrl: String, navControlle
                         contentScale = ContentScale.Crop
                     )
 
-                    // Gradient overlay
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -175,8 +181,9 @@ fun DetailScreen(title: String, subtitle: String, imageUrl: String, navControlle
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = when (val state = rememberDestinations()) {
-                            is DestinationsState.Success -> state.destinations.find { it.title == title }?.location ?: "Unknown"
+                        text = when (destinationsState) {
+                            is DestinationsState.Success -> destinationsState.destinations.find { it.title == title }?.location
+                                ?: "Unknown"
                             else -> "Unknown"
                         },
                         style = MaterialTheme.typography.bodyMedium,

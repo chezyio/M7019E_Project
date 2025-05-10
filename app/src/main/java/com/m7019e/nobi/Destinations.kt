@@ -1,14 +1,10 @@
 package com.m7019e.nobi
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
 
+@kotlinx.serialization.Serializable
 data class Destination(
     val title: String,
     val subtitle: String,
@@ -18,21 +14,8 @@ data class Destination(
 )
 
 @Composable
-fun rememberDestinations(): DestinationsState {
-    var state by remember { mutableStateOf<DestinationsState>(DestinationsState.Loading) }
-
-    LaunchedEffect(Unit) {
-        state = try {
-            val destinations = withContext(Dispatchers.IO) {
-                CountryApiService.fetchTenCountries()
-            }
-            DestinationsState.Success(destinations)
-        } catch (e: Exception) {
-            DestinationsState.Error("Failed to load destinations: ${e.message}")
-        }
-    }
-
-    return state
+fun rememberDestinations(viewModel: DestinationsViewModel = viewModel()): DestinationsState {
+    return viewModel.destinationsState.collectAsState().value
 }
 
 sealed class DestinationsState {

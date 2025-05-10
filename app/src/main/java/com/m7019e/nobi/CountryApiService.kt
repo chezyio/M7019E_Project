@@ -43,7 +43,7 @@ object CountryApiService {
             val responseBody = response.body?.string() ?: throw IOException("Empty response")
             val countries = json.decodeFromString<List<CountryApiResponse>>(responseBody)
 
-            countries.take(10).map { country ->
+            countries.shuffled().take(10).map { country ->
                 Destination(
                     title = country.name.common,
                     subtitle = country.capital?.joinToString(", ")?.takeIf { it.isNotBlank() } ?: "Explore ${country.name.common}",
