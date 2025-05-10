@@ -8,25 +8,37 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.Room
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class DestinationsViewModel(application: Application) : AndroidViewModel(application) {
     private val _destinationsState = MutableStateFlow<DestinationsState>(DestinationsState.Loading)
     val destinationsState: StateFlow<DestinationsState> = _destinationsState
 
-    private val sharedPreferences = application.getSharedPreferences("nobi_prefs", Context.MODE_PRIVATE)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val database = Room.databaseBuilder(
+        application,
+        AppDatabase::class.java,
+        "nobi_database"
+    ).build()
+    private val dao = database.destinationDao()
     private val connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val workManager = WorkManager.getInstance(application)
 
     init {
         setupNetworkCallback()
+        schedulePeriodicFetch()
+        observeCachedDestinations()
         fetchDestinations()
     }
 
@@ -44,6 +56,32 @@ class DestinationsViewModel(application: Application) : AndroidViewModel(applica
         connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
     }
 
+    private fun schedulePeriodicFetch() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val workRequest = PeriodicWorkRequestBuilder<DestinationWorker>(30, TimeUnit.SECONDS)
+            .setConstraints(constraints)
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            "destination_fetch",
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
+    }
+
+    private fun observeCachedDestinations() {
+        viewModelScope.launch {
+            dao.getAllDestinationsFlow().collectLatest { entities ->
+                if (entities.isNotEmpty()) {
+                    _destinationsState.value = DestinationsState.Success(entities.map { it.toDestination() })
+                }
+            }
+        }
+    }
+
     fun fetchDestinations() {
         viewModelScope.launch {
             _destinationsState.value = DestinationsState.Loading
@@ -52,33 +90,27 @@ class DestinationsViewModel(application: Application) : AndroidViewModel(applica
                     val destinations = withContext(Dispatchers.IO) {
                         CountryApiService.fetchTenCountries()
                     }
-                    // Cache the fetched destinations
                     withContext(Dispatchers.IO) {
-                        sharedPreferences.edit()
-                            .putString("cached_destinations", json.encodeToString(destinations))
-                            .apply()
+                        dao.clearDestinations()
+                        dao.insertDestinations(destinations.map { it.toEntity() })
                     }
-                    _destinationsState.value = DestinationsState.Success(destinations)
+                    // State is updated via Room Flow observation
                 } else {
-                    // Load cached destinations if offline
-                    val cachedJson = withContext(Dispatchers.IO) {
-                        sharedPreferences.getString("cached_destinations", null)
+                    val cachedDestinations = withContext(Dispatchers.IO) {
+                        dao.getAllDestinations()
                     }
-                    if (cachedJson != null) {
-                        val cachedDestinations = json.decodeFromString<List<Destination>>(cachedJson)
-                        _destinationsState.value = DestinationsState.Success(cachedDestinations)
+                    if (cachedDestinations.isNotEmpty()) {
+                        _destinationsState.value = DestinationsState.Success(cachedDestinations.map { it.toDestination() })
                     } else {
                         _destinationsState.value = DestinationsState.Error("No network and no cached data available")
                     }
                 }
             } catch (e: Exception) {
-                // Try loading cached data on failure
-                val cachedJson = withContext(Dispatchers.IO) {
-                    sharedPreferences.getString("cached_destinations", null)
+                val cachedDestinations = withContext(Dispatchers.IO) {
+                    dao.getAllDestinations()
                 }
-                if (cachedJson != null) {
-                    val cachedDestinations = json.decodeFromString<List<Destination>>(cachedJson)
-                    _destinationsState.value = DestinationsState.Success(cachedDestinations)
+                if (cachedDestinations.isNotEmpty()) {
+                    _destinationsState.value = DestinationsState.Success(cachedDestinations.map { it.toDestination() })
                 } else {
                     _destinationsState.value = DestinationsState.Error("Failed to load destinations: ${e.message}")
                 }
@@ -93,8 +125,7 @@ class DestinationsViewModel(application: Application) : AndroidViewModel(applica
     }
 
     override fun onCleared() {
+        database.close()
         super.onCleared()
-        // Note: Network callback is not unregistered to allow background refetching.
-        // If you want to unregister, you need to store the callback and request.
     }
 }
